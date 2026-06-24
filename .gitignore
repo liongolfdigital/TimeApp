@@ -12,3 +12,6 @@ data/
 uploads/
 server/uploads/
 local-data/
+
+.vercel
+.env*
