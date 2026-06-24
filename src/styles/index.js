@@ -1,4 +1,3 @@
-import "./responsive.css";
 import "./base.css";
 import "./layout.css";
 import "./components.css";
@@ -11,3 +10,4 @@ import "./employee.css";
 import "./diary.css";
 import "./attachments.css";
 import "./account.css";
+import "./responsive.css";

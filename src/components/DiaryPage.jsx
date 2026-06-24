@@ -571,7 +571,9 @@ export default function DiaryPage({ // input data
                 </th>
               )}
               <th className="index-column">STT</th>
-              {DIARY_FIELDS.map(({ label }) => <th key={label}>{label}</th>)}
+              {DIARY_FIELDS.map(({ key, label }) => (
+                <th className={`diary-cell-${key}`} key={label}>{label}</th>
+              ))}
               <th className="actions-column">Thao tác</th>
             </tr></thead>
             <tbody>
@@ -589,7 +591,15 @@ export default function DiaryPage({ // input data
                     </td>
                   )}
                   <td className="index-column">{index + 1}</td>
-                  {DIARY_FIELDS.map((field) => <td key={field.key} title={getCellTitle(entry, field)}>{renderCell(entry, field)}</td>)}
+                  {DIARY_FIELDS.map((field) => (
+                    <td
+                      className={`diary-cell-${field.key}`}
+                      key={field.key}
+                      title={getCellTitle(entry, field)}
+                    >
+                      {renderCell(entry, field)}
+                    </td>
+                  ))}
                   <td className="actions-column">
                     <div className="row-actions">
                       <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedEntryId(entry.id); }} aria-label={`Xem ${entry.employeeName}`}>
