@@ -98,6 +98,30 @@ export default function App() {
   });
   const [attachmentError, setAttachmentError] = useState("");
   const [shiftRules] = useState(loadShiftRulesForRuntime);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+
+  useEffect(() => {
+    const handleInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const handleAppInstalled = () => setInstallPrompt(null);
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener("beforeinstallprompt", handleInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // Ghi cache nhân viên nhưng giữ nguyên dữ liệu chi nhánh khác khi user là Manager.
   const persistEmployeesForUser = (nextEmployees, user = currentUser) => {
@@ -391,19 +415,46 @@ export default function App() {
     window.history.replaceState({}, "", "/");
   };
 
+  const handleInstallApp = async () => {
+    if (!installPrompt) return;
+
+    try {
+      await installPrompt.prompt();
+      await installPrompt.userChoice;
+    } catch (error) {
+      console.warn("[LionGolf Time] Không thể mở lời nhắc cài đặt.", error);
+    } finally {
+      setInstallPrompt(null);
+    }
+  };
+
+  const offlineNotice = !isOnline && (
+    <div className="offline-notice" role="status">
+      Bạn đang offline. Một số chức năng cần mạng để hoạt động.
+    </div>
+  );
+
   if (isCheckingAuth) {
     return (
-      <main className="login-page">
-        <section className="login-card">
-          <div className="eyebrow">Hệ thống chấm công nội bộ</div>
-          <h1>Đang kiểm tra phiên đăng nhập...</h1>
-        </section>
-      </main>
+      <>
+        {offlineNotice}
+        <main className="login-page">
+          <section className="login-card">
+            <div className="eyebrow">Hệ thống chấm công nội bộ</div>
+            <h1>Đang kiểm tra phiên đăng nhập...</h1>
+          </section>
+        </main>
+      </>
     );
   }
 
   if (!currentUser) {
-    return <LoginPage onLogin={handleLogin} />;
+    return (
+      <>
+        {offlineNotice}
+        <LoginPage onLogin={handleLogin} />
+      </>
+    );
   }
 
   const navPages = isAdmin(currentUser)
@@ -431,14 +482,23 @@ export default function App() {
           })}
         </nav>
 
-        <div className="session-badge">
-          <span className="privacy-dot" />
-          <span>{currentUser.fullName} 
-            {/* · {currentUser.role}{currentUser.branch ? ` ${currentUser.branch}` : ""} */}
-          </span>
-          <button type="button" onClick={handleLogout}>Đăng xuất</button>
+        <div className="topbar-actions">
+          {installPrompt && (
+            <button className="install-app-button" type="button" onClick={handleInstallApp}>
+              Cài app
+            </button>
+          )}
+          <div className="session-badge">
+            <span className="privacy-dot" />
+            <span>{currentUser.fullName}
+              {/* · {currentUser.role}{currentUser.branch ? ` ${currentUser.branch}` : ""} */}
+            </span>
+            <button type="button" onClick={handleLogout}>Đăng xuất</button>
+          </div>
         </div>
       </header>
+
+      {offlineNotice}
 
       {accessDenied && (
         <main className="access-denied">
