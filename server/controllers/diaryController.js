@@ -42,22 +42,39 @@ export function createDiaryController({ diaryService, logAudit, normalizeBranch,
     async exportEntries(request, response) {
       return response.json(await diaryService.listForExport(request.user));
     },
-    async replaceEntries(request, response) {
+    async importEntries(request, response) {
       const entries = Array.isArray(request.body?.entries) ? request.body.entries : [];
+      const startedAt = Date.now();
+      console.info("[Diary import] received rows", entries.length);
       try {
-        const savedEntries = await diaryService.replaceDiaryRecords(entries, request.user);
+        const result = await diaryService.importDiaryRecords(entries, request.user);
         await logAudit({
           user: request.user,
-          action: "diary.bulk_replace",
+          action: "diary.import",
           targetType: "diary",
           detail: {
-            count: savedEntries.length,
+            receivedRows: result.receivedRows,
+            sanitizedRows: result.sanitizedRows,
+            upsertedRows: result.upsertedRows,
+            insertedRows: result.insertedRows,
+            updatedRows: result.updatedRows,
             branch: request.user.role === "Manager" ? normalizeBranch(request.user.branch) : "ALL",
           },
         });
-        return response.json(savedEntries);
+        const totalMs = Date.now() - startedAt;
+        console.info("[Diary import] completed", {
+          receivedRows: result.receivedRows,
+          sanitizedRows: result.sanitizedRows,
+          upsertedRows: result.upsertedRows,
+          totalMs,
+        });
+        return response.json({ ...result, totalMs });
       } catch (error) {
-        try { await diaryService.rollback(); } catch {}
+        console.error("[Diary import] failed", {
+          receivedRows: entries.length,
+          totalMs: Date.now() - startedAt,
+          error: error.message,
+        });
         return handleApiError(response, error);
       }
     },

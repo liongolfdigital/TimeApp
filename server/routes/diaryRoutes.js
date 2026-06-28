@@ -15,6 +15,9 @@ export function registerDiaryImportExportRoutes(app, {
     app.get(route, requireAuth, requireDiaryImportExport, diaryController.exportEntries);
   });
   ["/api/diary-entries/bulk", "/api/diary/bulk"].forEach((route) => {
-    app.post(route, requireAuth, requireDiaryImportExport, diaryController.replaceEntries);
+    app.post(route, requireAuth, requireDiaryImportExport, diaryController.importEntries);
+  });
+  ["/api/diary-entries/import", "/api/diary/import"].forEach((route) => {
+    app.post(route, requireAuth, requireDiaryImportExport, diaryController.importEntries);
   });
 }

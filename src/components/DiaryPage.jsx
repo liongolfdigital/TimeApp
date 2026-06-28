@@ -389,11 +389,11 @@ export default function DiaryPage({ // input data
       const scopedImported = isManager(currentUser)
         ? imported.map((entry) => sanitizeDiaryEntry({ ...entry, branch: currentUser.branch }))
         : imported;
-      const currentScope = isManager(currentUser) ? visibleEntries : entries;
-      const merged = mergeDiaryEntries(currentScope, scopedImported);
       let savedEntries;
+      let importResult;
       try {
-        savedEntries = await diaryApi.replaceAll(merged);
+        importResult = await diaryApi.importEntries(scopedImported);
+        savedEntries = await diaryApi.list();
       } catch (error) {
         if (!isApiUnavailableError(error)) throw error;
         console.warn("[TimeKeeping data] Diary bulk API unavailable, importing to localStorage cache.", {
@@ -401,14 +401,25 @@ export default function DiaryPage({ // input data
           status: error.status,
           message: error.message,
         });
-        savedEntries = merged;
+        const currentScope = isManager(currentUser) ? visibleEntries : entries;
+        savedEntries = mergeDiaryEntries(currentScope, scopedImported);
+        importResult = {
+          receivedRows: imported.length,
+          sanitizedRows: scopedImported.length,
+          upsertedRows: scopedImported.length,
+        };
       }
       onEntriesChange(savedEntries);
-      setMessage({ type: "success", text: `Đã import ${imported.length} dòng. File đính kèm cần được upload riêng trên trang Diary.` });
+      setMessage({
+        type: "success",
+        text: `Đã import/upsert ${importResult.upsertedRows} dòng Diary. File đính kèm cần được upload riêng trên trang Diary.`,
+      });
       onLogAction?.("diary.import.ui", {
         targetType: "diary",
         detail: {
-          importedCount: imported.length,
+          importedCount: importResult.upsertedRows,
+          receivedCount: importResult.receivedRows,
+          sanitizedCount: importResult.sanitizedRows,
           totalCount: savedEntries.length,
           branch: isManager(currentUser) ? currentUser.branch : "ALL",
         },

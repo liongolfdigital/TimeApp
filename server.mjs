@@ -27,6 +27,8 @@ import {
   normalizeBranch as normalizeConfiguredBranch,
 } from "./src/branches/branchModel.js";
 import {
+  getDiaryIdentity,
+  sanitizeDiaryEntry,
   normalizeDiaryViolationTypes,
   sortDiaryEntries,
 } from "./src/diary/diaryModel.js";
@@ -43,6 +45,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = process.argv.includes("--dev");
 const port = Number(process.env.PORT) || 5173;
 const maxFileSizeMb = Number(process.env.ATTACHMENT_MAX_MB) || 20;
+const maxDiaryImportRows = Math.max(Number(process.env.DIARY_IMPORT_MAX_ROWS) || 5000, 1);
+const diaryImportBatchSize = Math.min(
+  Math.max(Number(process.env.DIARY_IMPORT_BATCH_SIZE) || 300, 200),
+  500,
+);
 const dataDirectory = path.resolve(
   process.env.TIMEKEEPING_DATA_DIR || path.join(__dirname, "data"),
 );
@@ -415,15 +422,22 @@ const diaryService = createDiaryService({
   repository: diaryRepository,
   normalizeBranch,
   normalizeText,
+  normalizeLookup,
+  normalizeEmployeeCode,
   canAccessBranch,
   branchForbiddenError,
   createId: () => crypto.randomUUID(),
   nowIso,
   detectRecordBranch,
   findEmployeeForDiary,
+  listEmployeesForDiary: employeeService.listAll,
   normalizeDiaryViolationTypes,
+  sanitizeDiaryEntry,
+  getDiaryIdentity,
   sortDiaryEntries,
   serializeDiaryRow,
+  maxImportRows: maxDiaryImportRows,
+  importBatchSize: diaryImportBatchSize,
 });
 const diaryController = createDiaryController({
   diaryService,
@@ -597,7 +611,20 @@ const upload = multer({
 
 const app = express();
 app.disable("x-powered-by");
-app.use(express.json({ limit: "1mb" }));
+const defaultJsonParser = express.json({ limit: "1mb" });
+const diaryImportJsonParser = express.json({ limit: "4mb" });
+const diaryImportPaths = new Set([
+  "/api/diary/bulk",
+  "/api/diary/import",
+  "/api/diary-entries/bulk",
+  "/api/diary-entries/import",
+]);
+app.use((request, response, next) => {
+  const parser = request.method === "POST" && diaryImportPaths.has(request.path)
+    ? diaryImportJsonParser
+    : defaultJsonParser;
+  return parser(request, response, next);
+});
 
 app.post("/api/auth/login", async (request, response) => {
   const username = normalizeUsername(request.body?.username);
@@ -1029,7 +1056,14 @@ app.use("/api", (_request, response) => {
   response.status(404).json({ error: "Khong tim thay API." });
 });
 
-app.use((error, _request, response, _next) => {
+app.use((error, request, response, _next) => {
+  if (error?.type === "entity.too.large") {
+    return response.status(413).json({
+      error: diaryImportPaths.has(request.path)
+        ? "File Diary quá lớn, vui lòng chia nhỏ file để import."
+        : error.message,
+    });
+  }
   if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
     return response.status(413).json({
       error: `File vuot qua gioi han ${maxFileSizeMb}MB.`,

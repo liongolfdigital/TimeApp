@@ -9,7 +9,7 @@
     "db:seed": "node scripts/seed.mjs",
     "db:migrate:sqlite": "node --experimental-sqlite scripts/migrate-sqlite-to-postgres.mjs",
     "build": "vite build",
-    "verify": "node verify-excel.mjs && node verify-server.mjs",
+    "verify": "node verify-excel.mjs && node verify-diary-import.mjs && node verify-server.mjs",
     "preview": "node --no-warnings server.mjs",
     "start": "node --no-warnings server.mjs"
   },

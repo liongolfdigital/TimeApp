@@ -285,12 +285,17 @@ export function sanitizeDiaryEntry(entry) {
   return sanitized;
 }
 
-/** Tạo khóa ghép Diary theo ngày, người và lý do cho luồng import/merge. */
+/** Tạo khóa upsert theo chi nhánh, ngày, người, lý do và tập loại vi phạm. */
 export function getDiaryIdentity(entry) {
   const code = normalizeDiaryEmployeeCode(entry.employeeCode);
   const name = normalizeLookup(entry.employeeName);
   const person = code ? `code:${code}` : `name:${name}`;
-  return `${normalizeDiaryDate(entry.date)}|${person}|${normalizeLookup(entry.reason)}`;
+  const branch = normalizeLookup(entry.branch);
+  const violationTypes = normalizeDiaryViolationTypes(entry.violationTypes)
+    .map(normalizeLookup)
+    .sort()
+    .join(",");
+  return `${branch}|${normalizeDiaryDate(entry.date)}|${person}|${normalizeLookup(entry.reason)}|${violationTypes}`;
 }
 
 /** Ghép Diary import vào dữ liệu hiện tại, giữ ID/createdAt và cập nhật metadata mới. */
