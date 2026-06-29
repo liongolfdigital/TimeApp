@@ -8,7 +8,7 @@ import multer from "multer";
 import { del, put } from "@vercel/blob";
 import {
   query,
-  requireDatabaseUrl,
+  transaction,
 } from "./server/db/db.mjs";
 import { createAuthMiddlewares } from "./server/middlewares/authMiddlewares.js";
 import { createDiaryRepository } from "./server/repositories/diaryRepository.js";
@@ -32,16 +32,10 @@ import {
   sortDiaryEntries,
 } from "./src/diary/diaryModel.js";
 
-try {
-  requireDatabaseUrl();
-} catch (error) {
-  console.error(JSON.stringify(error.payload ?? { error: error.message }));
-  throw error;
-}
-
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = process.argv.includes("--dev");
+const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
 const port = Number(process.env.PORT) || 5173;
 const maxFileSizeMb = Number(process.env.ATTACHMENT_MAX_MB) || 20;
 const maxDiaryImportRows = Math.max(Number(process.env.DIARY_IMPORT_MAX_ROWS) || 5000, 1);
@@ -53,8 +47,11 @@ const dataDirectory = path.resolve(
   process.env.TIMEKEEPING_DATA_DIR || path.join(__dirname, "data"),
 );
 const uploadDirectory = path.join(dataDirectory, "uploads");
-const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
-const passwordIterations = 120000;
+const defaultSessionTtlMs = 7 * 24 * 60 * 60 * 1000;
+const configuredSessionTtlMs = Number(process.env.SESSION_TTL_MS);
+const sessionTtlMs = Number.isFinite(configuredSessionTtlMs) && configuredSessionTtlMs > 0
+  ? configuredSessionTtlMs
+  : defaultSessionTtlMs;
 const database = { query, transaction };
 const diaryRepository = createDiaryRepository(database);
 const employeeRepository = createEmployeeRepository(database);
@@ -151,10 +148,31 @@ function branchForbiddenError() {
   return error;
 }
 
-function handleApiError(response, error) {
-  return response.status(error.status || 400).json({
-    error: error.payload?.error || error.message || "Khong the xu ly yeu cau.",
-  });
+function badRequestError(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
+
+function handleApiError(response, error, context = "api") {
+  const requestedStatus = Number(error?.status);
+  const status = Number.isInteger(requestedStatus)
+    && requestedStatus >= 400
+    && requestedStatus <= 599
+    ? requestedStatus
+    : 500;
+  if (status >= 500) console.error(`[${context}] failed:`, error);
+
+  const internalMessage = error?.payload?.error
+    || error?.message
+    || "Khong the xu ly yeu cau.";
+  const payload = {
+    error: status >= 500 && isProduction
+      ? "Khong the xu ly yeu cau. Loi may chu."
+      : internalMessage,
+  };
+  if (status >= 500 && !isProduction) payload.detail = internalMessage;
+  return response.status(status).json(payload);
 }
 
 function hashToken(token) {
@@ -224,7 +242,7 @@ async function activeAdminCountExcluding(accountId = "") {
 function validateRole(value) {
   const role = canonicalRole(value);
   if (!["Admin", "Manager"].includes(role)) {
-    throw new Error("Vai tro chi duoc la Admin hoac Manager.");
+    throw badRequestError("Vai tro chi duoc la Admin hoac Manager.");
   }
   return role;
 }
@@ -232,7 +250,7 @@ function validateRole(value) {
 function validateStatus(value) {
   const status = normalizeText(value);
   if (!["Active", "Inactive"].includes(status)) {
-    throw new Error("Trang thai chi duoc la Active hoac Inactive.");
+    throw badRequestError("Trang thai chi duoc la Active hoac Inactive.");
   }
   return status;
 }
@@ -251,11 +269,11 @@ async function insertAccount({
   const normalizedStatus = validateStatus(status);
   const normalizedBranch = normalizedRole === "Manager" ? normalizeBranch(branch) : normalizeText(branch);
 
-  if (!normalizedUsername) throw new Error("Vui long nhap Username.");
-  if (!normalizeText(fullName)) throw new Error("Vui long nhap Ho ten.");
-  if (String(password ?? "").length < 6) throw new Error("Mat khau phai co it nhat 6 ky tu.");
+  if (!normalizedUsername) throw badRequestError("Vui long nhap Username.");
+  if (!normalizeText(fullName)) throw badRequestError("Vui long nhap Ho ten.");
+  if (String(password ?? "").length < 6) throw badRequestError("Mat khau phai co it nhat 6 ky tu.");
   if (normalizedRole === "Manager" && !normalizedBranch) {
-    throw new Error("Manager phai duoc gan chi nhanh.");
+    throw badRequestError("Manager phai duoc gan chi nhanh.");
   }
 
   const account = {
@@ -296,6 +314,18 @@ async function logAudit({ user = null, action, targetType = "", targetId = "", d
     detail: detail === null || detail === undefined ? null : JSON.stringify(detail),
     createdAt: nowIso(),
   });
+}
+
+async function logAuditSafely(context, record) {
+  try {
+    await logAudit(record);
+  } catch (error) {
+    console.warn(`[${context}] audit failed:`, {
+      name: error.name,
+      code: error.code,
+      message: error.message,
+    });
+  }
 }
 
 function readBearerToken(request) {
@@ -539,6 +569,12 @@ async function storeUploadedFile(file, id) {
     return { blobUrl: blob.url, blobPathname: blob.pathname };
   }
 
+  if (isProduction) {
+    const error = new Error("Vercel Blob chua duoc cau hinh cho file dinh kem.");
+    error.status = 503;
+    throw error;
+  }
+
   await fs.promises.mkdir(uploadDirectory, { recursive: true });
   const localPath = path.join(uploadDirectory, `${id}-${storedName}`);
   await fs.promises.writeFile(localPath, file.buffer);
@@ -626,47 +662,21 @@ app.use((request, response, next) => {
   return parser(request, response, next);
 });
 
-// app.post("/api/auth/login", async (request, response) => {
-//   const username = normalizeUsername(request.body?.username);
-//   const password = String(request.body?.password ?? "");
-//   const account = username ? await getAccountByUsername(username) : null;
-
-//   if (!account || !verifyPassword(password, account.password_hash)) {
-//     await logAudit({
-//       user: account ? serializeAccount(account) : { username },
-//       action: "auth.login_failed",
-//       targetType: "account",
-//       targetId: account?.id ?? username,
-//     });
-//     return response.status(401).json({ error: "Ten dang nhap hoac mat khau khong dung." });
-//   }
-
-//   if (account.status !== "Active") {
-//     await logAudit({
-//       user: serializeAccount(account),
-//       action: "auth.login_blocked",
-//       targetType: "account",
-//       targetId: account.id,
-//     });
-//     return response.status(403).json({ error: "Tai khoan dang bi khoa." });
-//   }
-
-//   const token = crypto.randomBytes(32).toString("hex");
-//   const tokenHash = hashToken(token);
-//   const createdAt = nowIso();
-//   const expiresAt = new Date(Date.now() + sessionTtlMs).toISOString();
-//   await accountRepository.createSession({ tokenHash, accountId: account.id, createdAt, expiresAt });
-
-//   const user = serializeAccount(account);
-//   await logAudit({ user, action: "auth.login", targetType: "account", targetId: account.id });
-//   response.cookie?.("timekeeping_session", token, {
-//     httpOnly: true,
-//     sameSite: "lax",
-//     maxAge: sessionTtlMs,
-//     path: "/",
-//   });
-//   return response.json({ token, user, expiresAt });
-// });
+app.get("/api/health", async (_request, response) => {
+  let databaseStatus = "connected";
+  try {
+    await query("SELECT 1");
+  } catch (error) {
+    databaseStatus = "unavailable";
+    console.error("[health] database check failed:", error);
+  }
+  return response.json({
+    ok: true,
+    service: "time-app",
+    time: nowIso(),
+    database: databaseStatus,
+  });
+});
 
 app.post("/api/auth/login", async (request, response) => {
   try {
@@ -675,7 +685,7 @@ app.post("/api/auth/login", async (request, response) => {
     const account = username ? await getAccountByUsername(username) : null;
 
     if (!account || !verifyPassword(password, account.password_hash)) {
-      await logAudit({
+      await logAuditSafely("auth.login_failed", {
         user: account ? serializeAccount(account) : { username },
         action: "auth.login_failed",
         targetType: "account",
@@ -688,7 +698,7 @@ app.post("/api/auth/login", async (request, response) => {
     }
 
     if (account.status !== "Active") {
-      await logAudit({
+      await logAuditSafely("auth.login_blocked", {
         user: serializeAccount(account),
         action: "auth.login_blocked",
         targetType: "account",
@@ -714,7 +724,7 @@ app.post("/api/auth/login", async (request, response) => {
 
     const user = serializeAccount(account);
 
-    await logAudit({
+    await logAuditSafely("auth.login", {
       user,
       action: "auth.login",
       targetType: "account",
@@ -724,7 +734,7 @@ app.post("/api/auth/login", async (request, response) => {
     response.cookie?.("timekeeping_session", token, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
       maxAge: sessionTtlMs,
       path: "/",
     });
@@ -732,22 +742,39 @@ app.post("/api/auth/login", async (request, response) => {
     return response.json({ token, user, expiresAt });
   } catch (error) {
     console.error("[auth.login] failed:", error);
-    return response.status(500).json({
-      error: "Khong the dang nhap. Loi may chu.",
-      detail: process.env.NODE_ENV === "production" ? undefined : error.message,
-    });
+    const payload = { error: "Khong the dang nhap. Loi may chu." };
+    if (!isProduction) payload.detail = error.message;
+    return response.status(500).json(payload);
   }
 });
 
-app.get("/api/auth/me", requireAuth, (request, response) => {
-  response.json({ user: request.user });
+app.get("/api/auth/me", requireAuth, async (request, response) => {
+  try {
+    return response.json({ user: request.user });
+  } catch (error) {
+    return handleApiError(response, error, "auth.me");
+  }
 });
 
 app.post("/api/auth/logout", requireAuth, async (request, response) => {
-  await accountRepository.deleteSessionByToken(request.sessionTokenHash);
-  await logAudit({ user: request.user, action: "auth.logout", targetType: "account", targetId: request.user.id });
-  response.clearCookie?.("timekeeping_session", { path: "/" });
-  response.status(204).end();
+  try {
+    await accountRepository.deleteSessionByToken(request.sessionTokenHash);
+    await logAuditSafely("auth.logout", {
+      user: request.user,
+      action: "auth.logout",
+      targetType: "account",
+      targetId: request.user.id,
+    });
+    response.clearCookie?.("timekeeping_session", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: isProduction,
+      path: "/",
+    });
+    return response.status(204).end();
+  } catch (error) {
+    return handleApiError(response, error, "auth.logout");
+  }
 });
 
 app.get("/api/accounts", requireAuth, requireAdmin, async (_request, response) => {
@@ -769,9 +796,11 @@ app.post("/api/accounts", requireAuth, requireAdmin, async (request, response) =
     });
     return response.status(201).json(account);
   } catch (error) {
-    return response.status(400).json({
-      error: error.code === "23505" ? "Username da ton tai." : error.message,
-    });
+    if (error.code === "23505") {
+      error.status = 400;
+      error.message = "Username da ton tai.";
+    }
+    return handleApiError(response, error, "accounts.create");
   }
 });
 
@@ -788,18 +817,20 @@ app.put("/api/accounts/:id", requireAuth, requireAdmin, async (request, response
       ? normalizeBranch(request.body?.branch ?? account.branch)
       : normalizeText(request.body?.branch ?? "");
 
-    if (!nextUsername) throw new Error("Vui long nhap Username.");
-    if (!nextFullName) throw new Error("Vui long nhap Ho ten.");
-    if (nextRole === "Manager" && !nextBranch) throw new Error("Manager phai duoc gan chi nhanh.");
+    if (!nextUsername) throw badRequestError("Vui long nhap Username.");
+    if (!nextFullName) throw badRequestError("Vui long nhap Ho ten.");
+    if (nextRole === "Manager" && !nextBranch) {
+      throw badRequestError("Manager phai duoc gan chi nhanh.");
+    }
     if (
       canonicalRole(account.role) === "Admin" &&
       (nextRole !== "Admin" || nextStatus !== "Active") &&
       await activeAdminCountExcluding(account.id) === 0
     ) {
-      throw new Error("Khong the khoa hoac doi vai tro Admin hoat dong cuoi cung.");
+      throw badRequestError("Khong the khoa hoac doi vai tro Admin hoat dong cuoi cung.");
     }
     if (account.id === request.user.id && nextStatus !== "Active") {
-      throw new Error("Khong the tu khoa tai khoan dang dang nhap.");
+      throw badRequestError("Khong the tu khoa tai khoan dang dang nhap.");
     }
 
     await accountRepository.update({
@@ -821,9 +852,11 @@ app.put("/api/accounts/:id", requireAuth, requireAdmin, async (request, response
     });
     return response.json(updated);
   } catch (error) {
-    return response.status(400).json({
-      error: error.code === "23505" ? "Username da ton tai." : error.message,
-    });
+    if (error.code === "23505") {
+      error.status = 400;
+      error.message = "Username da ton tai.";
+    }
+    return handleApiError(response, error, "accounts.update");
   }
 });
 
@@ -920,7 +953,9 @@ app.get("/api/attachments/config", requireAuth, (_request, response) => {
   response.json({
     maxFileSizeMb,
     allowedExtensions: Array.from(allowedExtensions),
-    storage: process.env.BLOB_READ_WRITE_TOKEN ? "vercel-blob" : "local",
+    storage: process.env.BLOB_READ_WRITE_TOKEN
+      ? "vercel-blob"
+      : isProduction ? "unavailable" : "local",
   });
 });
 
@@ -1087,20 +1122,20 @@ app.use("/api", (_request, response) => {
 
 app.use((error, request, response, _next) => {
   if (error?.type === "entity.too.large") {
+    console.error(`[${request.method} ${request.path}] body too large:`, error.message);
     return response.status(413).json({
       error: diaryImportPaths.has(request.path)
         ? "File Diary quá lớn, vui lòng chia nhỏ file để import."
-        : error.message,
+        : "Du lieu gui len qua lon.",
     });
   }
   if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+    console.error(`[${request.method} ${request.path}] file too large:`, error.message);
     return response.status(413).json({
       error: `File vuot qua gioi han ${maxFileSizeMb}MB.`,
     });
   }
-  return response.status(error.status || 400).json({
-    error: error.payload?.error || error.message || "Khong the xu ly file.",
-  });
+  return handleApiError(response, error, `${request.method} ${request.path}`);
 });
 
 if (isDevelopment) {

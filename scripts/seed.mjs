@@ -33,7 +33,6 @@ async function createUser(db, { username, password, role, fullName, branch = "" 
 async function run() {
   const adminPassword = requiredEnv("DEFAULT_ADMIN_PASSWORD");
   const managerPassword = requiredEnv("DEFAULT_MANAGER_PASSWORD");
-  requiredEnv("JWT_SECRET");
   const managerBranch = process.env.DEFAULT_MANAGER_BRANCH || "Q7";
 
   await transaction(async (db) => {

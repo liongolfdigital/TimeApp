@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import { Pool } from "@neondatabase/serverless";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 let pool = null;
 
@@ -20,9 +20,13 @@ export function requireDatabaseUrl() {
 
 export function getPool() {
   if (!pool) {
+    const configuredPoolMax = Number(process.env.DATABASE_POOL_MAX);
+    const max = Number.isInteger(configuredPoolMax) && configuredPoolMax > 0
+      ? configuredPoolMax
+      : 1;
     pool = new Pool({
       connectionString: requireDatabaseUrl(),
-      max: Number(process.env.DATABASE_POOL_MAX || 1),
+      max,
     });
   }
   return pool;

@@ -82,11 +82,11 @@ Backend đã được chuyển sang Postgres serverless qua `@neondatabase/serve
 Env cần tạo trên Vercel:
 
 - `DATABASE_URL`: connection string Postgres. Ưu tiên tạo Neon Postgres từ Vercel Marketplace, sau đó gắn biến này cho Production/Preview/Development.
-- `JWT_SECRET`: secret riêng cho mỗi môi trường. Seed script yêu cầu biến này để đảm bảo môi trường đã cấu hình secret, dù auth hiện tại vẫn dùng session lưu trong Postgres.
 - `DEFAULT_ADMIN_PASSWORD`: mật khẩu seed cho user `admin`.
 - `DEFAULT_MANAGER_PASSWORD`: mật khẩu seed cho user `manager`.
 - `DEFAULT_MANAGER_BRANCH`: tùy chọn, mặc định `Q7`.
-- `BLOB_READ_WRITE_TOKEN`: tùy chọn nhưng nên có trên Vercel để file đính kèm lưu vào Vercel Blob. Nếu thiếu, local dev fallback sang thư mục local.
+- `SESSION_TTL_MS`: tùy chọn, thời hạn phiên đăng nhập; mặc định 7 ngày nếu thiếu hoặc không hợp lệ.
+- `BLOB_READ_WRITE_TOKEN`: bắt buộc nếu dùng file đính kèm trên production Vercel. Local dev vẫn fallback sang thư mục local khi thiếu.
 
 Tạo database trên Vercel:
 
