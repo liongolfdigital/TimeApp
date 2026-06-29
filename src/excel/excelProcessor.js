@@ -24,7 +24,6 @@ import {
   buildAttendanceHighlights,
   getAttendanceEmployeeKey,
   getWeekKey,
-  HIGHLIGHT_TYPES,
   isOffAttendanceDay,
 } from "./attendanceHighlights.js";
 import { normalizeDiaryDate } from "../diary/diaryModel.js";
@@ -42,6 +41,16 @@ import { getSourceCell as getMappedSourceCell, normalizeHeader } from "./excelCo
 import { readAttendanceWorkbook } from "./excelReader.js";
 import { applyAttendanceCellStyle, applyRowHighlights, ATTENDANCE_COLOR_MAP } from "./excelHighlightService.js";
 import { buildEmployeeSummaries, writeEmployeeSummaryBox } from "./excelSummaryService.js";
+import {
+  matchesProcessFilters,
+  resolveEmployeeBranch,
+} from "./processFilters.js";
+import {
+  makeMergedOutputFileName,
+  makeOutputFileName,
+} from "./excelFileNames.js";
+import { applyLongOffWarnings } from "./longOffProcessor.js";
+import { makePreview } from "./previewBuilder.js";
 
 export {
   ATTENDANCE_COLOR_MAP,
@@ -51,6 +60,8 @@ export {
   OUTPUT_FILE_NAME,
   SOURCE_SHEET_NAME,
   applyAttendanceCellStyle,
+  matchesProcessFilters,
+  makeMergedOutputFileName,
 };
 
 export const MERGED_SOURCE_COLUMN = "Nguồn file";
@@ -81,101 +92,9 @@ function getSourceCell(sourceSheet, columnMap, row, header) {
   return getMappedSourceCell(XLSX, sourceSheet, columnMap, row, header);
 }
 
-// Làm sạch tên chi nhánh để tạo file name hợp lệ trên Windows.
-function sanitizeFileName(value) {
-  return String(value ?? "")
-    .normalize("NFC")
-    .trim()
-    .replace(/[\\/:*?"<>|]/g, "")
-    .replace(/\s+/g, "_");
-}
-
-// Tạo tên file kết quả gồm chi nhánh và timestamp phút.
-function makeOutputFileName(branchName) {
-  const branch = sanitizeFileName(branchName) || "Chi_nhanh";
-  const now = new Date();
-
-  const timestamp = [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, "0"),
-    String(now.getDate()).padStart(2, "0"),
-    String(now.getHours()).padStart(2, "0"),
-    String(now.getMinutes()).padStart(2, "0"),
-  ].join("");
-
-  return `${branch}_bang_cham_cong_${timestamp}.xlsx`;
-}
-
 // Lấy text hiển thị của cell theo formatter SheetJS.
 function getCellDisplayValue(cell) {
   return cell ? XLSX.utils.format_cell(cell) : "";
-}
-
-function makeEmployeeSelectionSets(filters = {}) {
-  const selectedCodes = new Set();
-  const selectedKeys = new Set();
-
-  (filters.employeeIds ?? []).forEach((value) => {
-    const code = normalizeEmployeeCode(value);
-    const key = normalizeLookup(value);
-    if (code) selectedCodes.add(code);
-    if (key) selectedKeys.add(key);
-  });
-
-  return {
-    selectedCodes,
-    selectedKeys,
-    hasSelection: Boolean(selectedCodes.size || selectedKeys.size),
-  };
-}
-
-function matchesSelectedEmployee(
-  { registeredEmployee, employeeCode, employeeName },
-  { selectedCodes, selectedKeys },
-) {
-  const rowCodes = [
-    registeredEmployee?.employeeCode,
-    employeeCode,
-  ].map(normalizeEmployeeCode).filter(Boolean);
-  if (rowCodes.some((code) => selectedCodes.has(code))) return true;
-
-  const rowKeys = [
-    registeredEmployee?.id,
-    registeredEmployee?.employeeCode,
-    registeredEmployee?.employeeName,
-    employeeCode,
-    employeeName,
-  ].map(normalizeLookup).filter(Boolean);
-  return rowKeys.some((key) => selectedKeys.has(key));
-}
-
-function resolveEmployeeBranch({ registeredEmployee, employeeName, sourceFileName = "" }) {
-  return normalizeBranch(registeredEmployee?.branch) ||
-    detectBranchFromText(registeredEmployee?.employeeName) ||
-    detectBranchFromText(employeeName) ||
-    detectBranchFromText(sourceFileName);
-}
-
-/** Kiểm tra một dòng chấm công có khớp chi nhánh, nhân viên và khoảng ngày đã chọn hay không. */
-export function matchesProcessFilters(
-  { registeredEmployee, employeeCode, employeeName, dateValue, sourceFileName = "" },
-  filters = {},
-) {
-  const branches = new Set((filters.branches ?? []).map(normalizeBranch).filter(Boolean));
-  const employeeSelection = makeEmployeeSelectionSets(filters);
-  const employeeBranch = resolveEmployeeBranch({ registeredEmployee, employeeName, sourceFileName });
-  const dayKey = normalizeDiaryDate(dateValue);
-
-  if (filters.dateFrom && (!dayKey || dayKey < filters.dateFrom)) return false;
-  if (filters.dateTo && (!dayKey || dayKey > filters.dateTo)) return false;
-  if (employeeSelection.hasSelection) {
-    return matchesSelectedEmployee(
-      { registeredEmployee, employeeCode, employeeName },
-      employeeSelection,
-    );
-  }
-  if (branches.size && !branches.has(employeeBranch)) return false;
-  return true;
 }
 
 // Sao chép phần tiêu đề/banner nằm trước dòng header sang worksheet kết quả.
@@ -244,8 +163,6 @@ function shouldAutoCountOver60(violationKey, minutes) {
   return false;
 }
 
-// Diary dùng loại OFF canonical nhưng ghi chú đầu ra hiển thị rõ chuỗi OFF > 2 ngày.
-const LONG_OFF_VIOLATION_TYPE = "OFF > 2 ngày";
 // Tạo khóa nhân viên-tháng dùng cộng phút trễ và cảnh báo riêng cho VP.
 function getEmployeeMonthKey(dateValue, employeeCode, employeeName) {
   let year;
@@ -271,123 +188,6 @@ function getEmployeeMonthKey(dateValue, employeeCode, employeeName) {
   const identity = normalizeLookup(employeeCode) || normalizeLookup(employeeName);
   if (!identity) return null;
   return `${identity}|${year}-${String(month).padStart(2, "0")}`;
-}
-
-// Quy đổi YYYY-MM-DD thành số ngày UTC để dò chuỗi OFF liên tiếp.
-function getDayNumber(dayKey) {
-  const [year, month, day] = String(dayKey ?? "").split("-").map(Number);
-  if (!year || !month || !day) return null;
-  return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
-}
-
-// Gom các ngày OFF liên tiếp của từng nhân viên và đánh dấu chuỗi từ hai ngày.
-function findLongOffSequences(rowResults) {
-  const rowsByEmployee = new Map();
-
-  rowResults.forEach((rowResult) => {
-    if (!rowResult.isOff || !rowResult.employeeKey || !rowResult.dayKey) return;
-    const dayNumber = getDayNumber(rowResult.dayKey);
-    if (dayNumber === null) return;
-    rowsByEmployee.set(rowResult.employeeKey, [
-      ...(rowsByEmployee.get(rowResult.employeeKey) ?? []),
-      { ...rowResult, dayNumber },
-    ]);
-  });
-
-  const longOffRows = new Map();
-  // Ghi metadata cho mọi dòng thuộc một chuỗi OFF đủ dài.
-  const markSequence = (sequence) => {
-    if (sequence.length < 2) return;
-    sequence.forEach((item) => {
-      longOffRows.set(item.row, { sequenceLength: sequence.length });
-    });
-  };
-
-  rowsByEmployee.forEach((items) => {
-    const sortedItems = [...items].sort((first, second) =>
-      first.dayNumber === second.dayNumber
-        ? first.row - second.row
-        : first.dayNumber - second.dayNumber,
-    );
-    let sequence = [];
-    let previousDay = null;
-
-    sortedItems.forEach((item) => {
-      if (sequence.length === 0 || item.dayNumber === previousDay + 1) {
-        sequence.push(item);
-      } else if (item.dayNumber !== previousDay) {
-        markSequence(sequence);
-        sequence = [item];
-      } else {
-        sequence.push(item);
-      }
-      previousDay = item.dayNumber;
-    });
-    markSequence(sequence);
-  });
-
-  return longOffRows;
-}
-
-// Dựng trạng thái và câu ghi chú OFF > 2 ngày từ Diary Có/Không phép.
-function getLongOffDiaryNote(diaryMatch) {
-  if (!diaryMatch) {
-    return {
-      status: "missingDiary",
-      note: `${LONG_OFF_VIOLATION_TYPE} chưa có Diary`,
-    };
-  }
-
-  const permitted = isDiaryPermitted(diaryMatch.entry);
-  return {
-    status: permitted ? "permitted" : "notPermitted",
-    note: `${LONG_OFF_VIOLATION_TYPE} ${permitted ? "có phép" : "không phép"}: ${getDiaryReason(diaryMatch.entry)}`,
-  };
-}
-
-// Đối chiếu Diary cho các chuỗi OFF, nối ghi chú và thêm log audit vào kết quả.
-function applyLongOffWarnings(rowResults, diaryLookup, diaryMatchLogs) {
-  const longOffRows = findLongOffSequences(rowResults);
-
-  rowResults.forEach((rowResult) => {
-    const longOffMeta = longOffRows.get(rowResult.row);
-    if (!longOffMeta) return;
-
-    const diaryMatch = findDiaryForViolation(diaryLookup, {
-      date: rowResult.dateValue,
-      employeeCode: rowResult.employeeCode,
-      employeeName: rowResult.effectiveEmployeeName,
-      violationType: LONG_OFF_VIOLATION_TYPE,
-    });
-    const warning = getLongOffDiaryNote(diaryMatch);
-
-    rowResult.longOff = true;
-    rowResult.longOffStatus = warning.status;
-    rowResult.offSequenceLength = longOffMeta.sequenceLength;
-    rowResult.calculation.note = appendNote(rowResult.calculation.note, warning.note);
-
-    if (!diaryMatch) return;
-
-    rowResult.diaryMatched = true;
-    if (warning.status === "permitted") rowResult.diaryExempted = true;
-    diaryMatchLogs.push({
-      rowNumber: rowResult.row + 1,
-      employeeCode: rowResult.employeeCode,
-      employeeName: rowResult.employeeName,
-      date: diaryMatch.entry.date,
-      matchType: diaryMatch.matchType,
-      violationType: LONG_OFF_VIOLATION_TYPE,
-      reason: diaryMatch.entry.reason,
-      permission: diaryMatch.entry.permission,
-      creatorCode: diaryMatch.entry.creatorCode,
-      creatorName: diaryMatch.entry.creatorName,
-      attachmentCount: (diaryMatch.entry.attachedFiles ?? diaryMatch.entry.attachments)?.length ?? 0,
-      hasAttachments: Boolean((diaryMatch.entry.attachedFiles ?? diaryMatch.entry.attachments)?.length),
-      previousPenalty: rowResult.calculation.penalty,
-      finalPenalty: rowResult.calculation.penalty,
-      exempted: warning.status === "permitted",
-    });
-  });
 }
 
 // Ghi lại bốn cell clock sau normalize bằng cách clone đúng cell nguồn/style gốc.
@@ -801,7 +601,7 @@ function createProcessedSheet(
   }
 
   // OFF liên tiếp từ hai ngày được đối chiếu Diary riêng và tô tại cột Ghi chú.
-  applyLongOffWarnings(rowResults, diaryLookup, diaryMatchLogs);
+  applyLongOffWarnings(rowResults, diaryLookup, diaryMatchLogs, appendNote);
   const highlights = buildAttendanceHighlights(rowResults);
   const employeeSummaries = buildEmployeeSummaries(rowResults);
 
@@ -898,98 +698,6 @@ function createProcessedSheet(
   };
 }
 
-// Tạo tối đa PREVIEW_ROW_LIMIT dòng text và class highlight cho bảng xem trước React.
-function makePreview(worksheet, headerRow, bounds, highlights, diaryRows, dataRowCount) {
-  const rows = [];
-  const previewHighlights = [];
-  const previewDiaryMatches = [];
-  const lastRow = Math.min(
-    bounds.e.r,
-    headerRow + PREVIEW_ROW_LIMIT,
-    headerRow + dataRowCount,
-  );
-  const highlightByRow = new Map(highlights.map((highlight) => [highlight.row, highlight]));
-  const diaryByRow = new Map(diaryRows.map((item) => [item.row, item]));
-  // Ghép class màu loại vi phạm với class border trạng thái Diary.
-  const makeViolationPreviewClass = (type, status) =>
-    status ? `${type} preview-status-${status}` : type;
-
-  for (let row = headerRow + 1; row <= lastRow; row += 1) {
-    const highlight = highlightByRow.get(row);
-
-    const previewRow = OUTPUT_COLUMNS.map((_, columnIndex) => {
-      const address = XLSX.utils.encode_cell({ r: row, c: bounds.s.c + columnIndex });
-      const cell = worksheet[address];
-
-      if (!cell) return "";
-
-      if (OUTPUT_COLUMNS[columnIndex] === "Phạt" && typeof cell.v === "number") {
-        return cell.v.toLocaleString("vi-VN");
-      }
-
-      return XLSX.utils.format_cell(cell);
-    });
-
-    if (previewRow.some(Boolean)) {
-      rows.push(previewRow);
-
-      previewHighlights.push(
-        OUTPUT_COLUMNS.map((header) => {
-          if (highlight?.missingClock) return HIGHLIGHT_TYPES.missingClock;
-          if (
-            ["Vào 1", "Ra 1", "Vào 2", "Ra 2"].includes(header) &&
-            highlight?.multiplePunches?.slots?.includes(
-              header === "Vào 1"
-                ? "in1"
-                : header === "Ra 1"
-                  ? "out1"
-                  : header === "Vào 2"
-                    ? "in2"
-                    : "out2",
-            )
-          ) {
-            return HIGHLIGHT_TYPES.multiplePunches;
-          }
-          if (header === "Ghi chú" && highlight?.longOff) {
-            return makeViolationPreviewClass(
-              HIGHLIGHT_TYPES.off,
-              highlight.longOffStatus,
-            );
-          }
-          if (header === "Đi sớm" && highlight?.earlyIn) {
-            return makeViolationPreviewClass(
-              HIGHLIGHT_TYPES.earlyIn,
-              highlight.violationStatuses?.earlyIn,
-            );
-          }
-          if (header === "Đi trễ" && highlight?.late) {
-            return makeViolationPreviewClass(
-              HIGHLIGHT_TYPES.late,
-              highlight.violationStatuses?.late,
-            );
-          }
-          if (header === "Về sớm" && highlight?.early) {
-            return makeViolationPreviewClass(
-              HIGHLIGHT_TYPES.early,
-              highlight.violationStatuses?.early,
-            );
-          }
-          if (header === "Tăng ca" && highlight?.overtime) {
-            return makeViolationPreviewClass(
-              HIGHLIGHT_TYPES.overtime,
-              highlight.violationStatuses?.overtime,
-            );
-          }
-          return null;
-        }),
-      );
-      previewDiaryMatches.push(diaryByRow.get(row)?.diaryMatched ?? false);
-    }
-  }
-
-  return { rows, highlights: previewHighlights, diaryMatches: previewDiaryMatches };
-}
-
 /**
  * Entry point xử lý file chấm công: đọc/validate workbook, tạo sheet kết quả có style,
  * serialize Blob và trả metadata preview/audit cho AttendancePage.
@@ -1061,6 +769,7 @@ export async function processExcelFile(
   });
   const previewBounds = XLSX.utils.decode_range(processedSheet["!ref"]);
   const preview = makePreview(
+    XLSX,
     processedSheet,
     headerRow,
     previewBounds,
@@ -1108,24 +817,6 @@ export async function processExcelFile(
       employeeSummaries,
     } : {}),
   };
-}
-
-/** Tạo tên file tổng hợp theo loại bộ lọc và thời điểm xử lý. */
-export function makeMergedOutputFileName(filters = {}, now = new Date()) {
-  const scope = filters.employeeIds?.length
-    ? "NhanVien"
-    : filters.branches?.length
-      ? "ChiNhanh"
-      : "All";
-  const timestamp = [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, "0"),
-    String(now.getDate()).padStart(2, "0"),
-  ].join("") + "_" + [
-    String(now.getHours()).padStart(2, "0"),
-    String(now.getMinutes()).padStart(2, "0"),
-  ].join("");
-  return `XuLy_TongHop_${scope}_${timestamp}.xlsx`;
 }
 
 function getEmployeeReportKey(employee) {

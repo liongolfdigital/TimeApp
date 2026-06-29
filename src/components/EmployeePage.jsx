@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import EmployeeForm from "./EmployeeForm";
-import {AlertIcon, DownloadIcon, EditIcon, FilterIcon, PlusIcon, SearchIcon, TrashIcon, UploadIcon, UsersIcon} from "./Icons";
+import EmployeeFilters from "./employees/EmployeeFilters";
+import EmployeeTable from "./employees/EmployeeTable";
+import EmployeeToolbar from "./employees/EmployeeToolbar";
+import { AlertIcon, UsersIcon } from "./Icons";
 import {exportEmployeesToExcel, importEmployeesFromExcel} from "../employees/employeeExcel";
-import {EMPLOYEE_FIELDS, getEmployeeGroup, mergeEmployeeLists, normalizeLookup, sanitizeEmployee} from "../employees/employeeModel";
+import {getEmployeeGroup, mergeEmployeeLists, normalizeLookup, sanitizeEmployee} from "../employees/employeeModel";
 import {
-  getEmployeeBulkDeleteLabel,
   getVisibleEmployeeSelectionState,
   toggleAllVisibleEmployeeSelection,
   toggleEmployeeSelection,
@@ -362,77 +364,31 @@ export default function EmployeePage({currentUser, employees, onEmployeesChange,
 
       <section className="employee-card">
         <div className="employee-toolbar">
-          <div className="toolbar-actions">
-            <input
-              ref={importInputRef}
-              className="hidden-file-input"
-              type="file"
-              aria-hidden="true"
-              tabIndex={-1}
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              onChange={(event) => handleImport(event.target.files?.[0])}
-            />
-            {allowImportExport && (<>
-              <button
-                className="button button-secondary"
-                type="button"
-                disabled={isImporting}
-                onClick={() => importInputRef.current?.click()}
-              >
-                <UploadIcon size={18} />
-                {isImporting ? "Đang import..." : "Import RegisHours.xlsx"}
-              </button>
-              <button className="button button-secondary" type="button" onClick={handleExport}>
-                <DownloadIcon size={18} /> Export Excel
-              </button>
-            </>)}
-            <button className="button button-primary" type="button" onClick={openCreateForm}>
-              <PlusIcon size={18} /> Thêm nhân viên
-            </button>
-            {allowDelete && (
-              <button
-                className="button button-secondary employee-bulk-delete"
-                type="button"
-                disabled={!selectedEmployeeIds.length || isDeletingSelected}
-                onClick={handleDeleteSelectedEmployees}
-              >
-                <TrashIcon size={18} />
-                {getEmployeeBulkDeleteLabel(selectedEmployeeIds.length, isDeletingSelected)}
-              </button>
-            )}
-          </div>
-
-          <div className="employee-filters">
-            <label className="search-field">
-              <SearchIcon size={18} />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Tìm mã, tên, chi nhánh..."
-              />
-            </label>
-            <label className="select-field">
-              <FilterIcon size={17} />
-              <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-                <option value="">Tất cả chi nhánh</option>
-                {branches.map((branch) => <option key={branch} value={branch}>{branch}</option>)}
-              </select>
-            </label>
-            <label className="select-field">
-              <FilterIcon size={17} />
-              <select value={shiftFilter} onChange={(event) => setShiftFilter(event.target.value)}>
-                <option value="">Tất cả giờ ĐK</option>
-                {shifts.map((shift) => <option key={shift} value={shift}>{shift}</option>)}
-              </select>
-            </label>
-            <label className="select-field">
-              <FilterIcon size={17} />
-              <select value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}>
-                <option value="">Tất cả nhóm</option>
-                {employeeGroups.map((group) => <option key={group} value={group}>{group}</option>)}
-              </select>
-            </label>
-          </div>
+          <EmployeeToolbar
+            allowDelete={allowDelete}
+            allowImportExport={allowImportExport}
+            importInputRef={importInputRef}
+            isDeletingSelected={isDeletingSelected}
+            isImporting={isImporting}
+            onCreate={openCreateForm}
+            onDeleteSelected={handleDeleteSelectedEmployees}
+            onExport={handleExport}
+            onImport={handleImport}
+            selectedCount={selectedEmployeeIds.length}
+          />
+          <EmployeeFilters
+            branches={branches}
+            branchFilter={branchFilter}
+            employeeGroups={employeeGroups}
+            groupFilter={groupFilter}
+            search={search}
+            shiftFilter={shiftFilter}
+            shifts={shifts}
+            onBranchChange={setBranchFilter}
+            onGroupChange={setGroupFilter}
+            onSearchChange={setSearch}
+            onShiftChange={setShiftFilter}
+          />
         </div>
 
         {message && (
@@ -452,67 +408,21 @@ export default function EmployeePage({currentUser, employees, onEmployeesChange,
           <span>{isManager(currentUser) ? `Manager chi nhánh ${currentUser.branch}` : "Dữ liệu được lưu qua API có kiểm tra phân quyền"}</span>
         </div>
 
-        <div className="employee-table-shell">
-          <table className={`employee-table ${allowDelete ? "employee-table-selectable" : ""}`}>
-            <thead>
-              <tr>
-                {allowDelete && (
-                  <th className="employee-selection-column">
-                    <input
-                      ref={selectAllCheckboxRef}
-                      type="checkbox"
-                      checked={visibleSelectionState.allSelected}
-                      aria-checked={visibleSelectionState.someSelected ? "mixed" : visibleSelectionState.allSelected}
-                      disabled={!visibleEmployeeIds.length || isDeletingSelected}
-                      onChange={toggleSelectAllVisible}
-                      aria-label="Chọn tất cả nhân viên đang hiển thị"
-                    />
-                  </th>
-                )}
-                <th className="index-column">STT</th>
-                {EMPLOYEE_FIELDS.map(({ label }) => <th key={label}>{label}</th>)}
-                <th className="actions-column">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEmployees.length > 0 ? (
-                filteredEmployees.map((employee, index) => (
-                  <tr className={selectedEmployeeIds.includes(employee.id) ? "is-selected" : ""} key={employee.id}>
-                    {allowDelete && (
-                      <td className="employee-selection-column">
-                        <input
-                          type="checkbox"
-                          checked={selectedEmployeeIds.includes(employee.id)}
-                          disabled={isDeletingSelected}
-                          onChange={() => toggleSelectEmployee(employee.id)}
-                          aria-label={`Chọn ${employee.employeeName || employee.employeeCode}`}
-                        />
-                      </td>
-                    )}
-                    <td className="index-column">{index + 1}</td>
-                    {EMPLOYEE_FIELDS.map(({ key }) => (
-                      <td key={key} title={employee[key]}>{employee[key] || <span className="empty-cell">—</span>}</td>
-                    ))}
-                    <td className="actions-column">
-                      <div className="row-actions">
-                        <button type="button" onClick={() => openEditForm(employee)} aria-label={`Sửa ${employee.employeeName}`}><EditIcon /></button>
-                        {allowDelete && <button className="danger-action" type="button" onClick={() => deleteEmployee(employee)} aria-label={`Xóa ${employee.employeeName}`}><TrashIcon /></button>}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td className="employee-empty" colSpan={EMPLOYEE_FIELDS.length + (allowDelete ? 3 : 2)}>
-                    <UsersIcon size={30} />
-                    <strong>{visibleEmployees.length ? "Không có kết quả phù hợp" : "Chưa có danh sách nhân viên"}</strong>
-                    <span>{allowImportExport ? "Import file RegisHours.xlsx hoặc thêm nhân viên mới." : "Bạn chỉ thấy nhân viên thuộc chi nhánh được phân quyền."}</span>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <EmployeeTable
+          allowDelete={allowDelete}
+          allowImportExport={allowImportExport}
+          filteredEmployees={filteredEmployees}
+          isDeletingSelected={isDeletingSelected}
+          onDelete={deleteEmployee}
+          onEdit={openEditForm}
+          onSelect={toggleSelectEmployee}
+          onSelectAllVisible={toggleSelectAllVisible}
+          selectAllCheckboxRef={selectAllCheckboxRef}
+          selectedIds={selectedEmployeeIds}
+          visibleEmployeeIds={visibleEmployeeIds}
+          visibleEmployees={visibleEmployees}
+          visibleSelectionState={visibleSelectionState}
+        />
       </section>
 
       {isFormOpen && (

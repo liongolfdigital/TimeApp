@@ -3,8 +3,8 @@
  * Luồng chính: parse clock -> chọn ca từ Employees/rule -> tính Tổng làm và các phát sinh
  * -> áp ngoại lệ Q7 Thứ 2/VP Thứ 7/full ngày -> trả số phút, ca và ghi chú cho processor.
  */
-import { normalizeEmployeeCode, normalizeLookup, normalizeText } from "../employees/employeeModel.js";
-import { CLOCK_SLOT_LABELS, MINUTES_PER_DAY } from "../constants/attendanceConstants.js";
+import { normalizeLookup } from "../employees/employeeModel.js";
+import { MINUTES_PER_DAY } from "../constants/attendanceConstants.js";
 import {
   calculateTotalWorkedMinutes,
   formatDurationMinutes,
@@ -27,12 +27,24 @@ import {
   calculateLatePenalty,
 } from "../services/attendance/lateEarlyService.js";
 import { calculateOvertimeMinutes } from "../services/attendance/overtimeService.js";
-import { isThuDucEmployee } from "../services/attendance/thuDucRuleService.js";
+import { adjustClockColumns } from "./clockClassifier.js";
+import {
+  FULL_DAY_SHIFT_MATCH_THRESHOLD_MINUTES,
+  getMorningToAfternoonFullDayStatus,
+} from "./fullDayResolver.js";
+import {
+  createEmployeeLookup,
+  findRegisteredEmployee,
+} from "./employeeLookup.js";
 
 export {
   calculateLatePenalty,
   calculateTotalWorkedMinutes,
+  createEmployeeLookup,
+  findRegisteredEmployee,
   formatDurationMinutes,
+  FULL_DAY_SHIFT_MATCH_THRESHOLD_MINUTES,
+  getMorningToAfternoonFullDayStatus,
   getVPSaturdayShift,
   getVPSaturdayShiftAssignment,
   isSaturday,
@@ -40,16 +52,8 @@ export {
   isVpEmployee,
   timeValueToMinutes,
   totalHoursValueToMinutes,
+  adjustClockColumns,
 };
-
-// Tính khoảng cách vòng tròn giữa hai mốc giờ trong một ngày.
-function clockDistance(first, second) {
-  const directDistance = Math.abs(first - second);
-  return Math.min(directDistance, MINUTES_PER_DAY - directDistance);
-}
-
-// Ngưỡng nhận diện giờ ra thuộc ca chiều khi xét ngoại lệ làm full ngày sáng - chiều.
-export const FULL_DAY_SHIFT_MATCH_THRESHOLD_MINUTES = 90;
 
 // Chọn mốc vào sớm nhất từ Vào 1/Vào 2 và ghi lại cột nguồn.
 function selectActualIn(clockValues) {
@@ -65,17 +69,6 @@ function selectActualIn(clockValues) {
   );
 }
 
-// Định dạng một giá trị clock hỗn hợp thành HH:mm để đưa vào log điều chỉnh.
-function formatClockValue(value) {
-  const minutes = timeValueToMinutes(value);
-  if (minutes === null) return normalizeText(value);
-
-  const roundedMinutes = Math.round(minutes) % MINUTES_PER_DAY;
-  const hours = Math.floor(roundedMinutes / 60);
-  const minutePart = roundedMinutes % 60;
-  return `${String(hours).padStart(2, "0")}:${String(minutePart).padStart(2, "0")}`;
-}
-
 // Định dạng số phút thành HH:mm theo đồng hồ 24 giờ.
 function formatMinutes(minutes) {
   if (minutes === null || minutes === undefined) return null;
@@ -88,11 +81,6 @@ function formatMinutes(minutes) {
   ).padStart(2, "0")}`;
 }
 
-// Kiểm tra cell clock có dữ liệu thô hay không, chưa đánh giá tính hợp lệ của giờ.
-function hasClockValue(value) {
-  return value !== null && value !== undefined && value !== "";
-}
-
 // Lấy giờ bắt đầu ca từ override của rule hoặc field hồ sơ nhân viên.
 function getShiftStartValue(employee, shift) {
   return shift.startValue ?? employee[shift.startField];
@@ -101,174 +89,6 @@ function getShiftStartValue(employee, shift) {
 // Lấy giờ kết thúc ca từ override của rule hoặc field hồ sơ nhân viên.
 function getShiftEndValue(employee, shift) {
   return shift.endValue ?? employee[shift.endField];
-}
-
-// Dựng các mốc Vào/Ra đăng ký dùng phân loại lại bốn cột clock trước khi tính.
-function getRegisteredMarkers(employee, shiftAssignment, shiftCandidates = []) {
-  const markerValues = shiftAssignment
-    ? {
-        in: [
-          [
-            `Vào ${shiftAssignment.shift.name}`,
-            getShiftStartValue(employee, shiftAssignment.shift),
-          ],
-        ],
-        out: [
-          [
-            `Ra ${shiftAssignment.shift.name}`,
-            getShiftEndValue(employee, shiftAssignment.shift),
-          ],
-        ],
-      }
-    : shiftCandidates.length > 0
-      ? {
-          in: shiftCandidates.map((shift) => [`Vào ${shift.name}`, getShiftStartValue(employee, shift)]),
-          out: shiftCandidates.map((shift) => [`Ra ${shift.name}`, getShiftEndValue(employee, shift)]),
-        }
-    : {
-    in: [
-      ["Vào sáng", employee.morningIn],
-      ["Vào chiều", employee.afternoonIn],
-      ["Vào tối", employee.eveningIn],
-    ],
-    out: [
-      ["Ra sáng", employee.morningOut],
-      ["Ra chiều", employee.afternoonOut],
-      ["Ra tối", employee.eveningOut],
-    ],
-      };
-
-  return Object.fromEntries(
-    Object.entries(markerValues).map(([type, markers]) => [
-      type,
-      markers
-        .map(([label, value]) => ({ label, minutes: timeValueToMinutes(value) }))
-        .filter(({ minutes }) => minutes !== null),
-    ]),
-  );
-}
-
-// Tìm mốc đăng ký gần giờ thực tế nhất trong một nhóm Vào hoặc Ra.
-function findNearestMarker(actualMinutes, markers) {
-  if (markers.length === 0) return null;
-
-  return markers.reduce((nearest, marker) =>
-    clockDistance(actualMinutes, marker.minutes) <
-    clockDistance(actualMinutes, nearest.minutes)
-      ? marker
-      : nearest,
-  );
-}
-
-// Phân loại một clock là Vào/Ra theo khoảng cách tới các mốc đăng ký.
-function classifyClockValue(value, originalType, registeredMarkers) {
-  const actualMinutes = timeValueToMinutes(value);
-  if (actualMinutes === null) return null;
-
-  const nearestIn = findNearestMarker(actualMinutes, registeredMarkers.in);
-  const nearestOut = findNearestMarker(actualMinutes, registeredMarkers.out);
-  if (!nearestIn && !nearestOut) return null;
-  if (!nearestIn) return { type: "out", marker: nearestOut };
-  if (!nearestOut) return { type: "in", marker: nearestIn };
-
-  const inDistance = clockDistance(actualMinutes, nearestIn.minutes);
-  const outDistance = clockDistance(actualMinutes, nearestOut.minutes);
-  if (inDistance === outDistance) {
-    return {
-      type: originalType,
-      marker: originalType === "in" ? nearestIn : nearestOut,
-    };
-  }
-
-  return inDistance < outDistance
-    ? { type: "in", marker: nearestIn }
-    : { type: "out", marker: nearestOut };
-}
-
-// Tạo ghi chú audit khi một clock được chuyển sang cột Vào/Ra khác.
-function makeMoveNote(value, sourceSlot, targetSlot) {
-  return `Đã chuyển ${formatClockValue(value)} từ ${CLOCK_SLOT_LABELS[sourceSlot]} sang ${CLOCK_SLOT_LABELS[targetSlot]}`;
-}
-
-/**
- * Chuẩn hóa vị trí bốn mốc Vào/Ra trước khi chọn ca và tính chấm công.
- * @param {object} employee - Hồ sơ Employees chứa các mốc giờ đăng ký.
- * @param {object} clockValues - Bốn clock thô in1/out1/in2/out2 của dòng nguồn.
- * @param {object|null} shiftAssignment - Ca được rule gán trước, nếu có.
- * @param {object[]} shiftCandidates - Danh sách ca tùy chỉnh dùng thay các ca trong Employees.
- * @returns {object} Clock gốc/đã chỉnh, map cột nguồn và ghi chú audit; không sửa input.
- */
-export function adjustClockColumns(
-  employee,
-  clockValues,
-  shiftAssignment = null,
-  shiftCandidates = [],
-) {
-  const original = { ...clockValues };
-  const adjusted = { in1: null, out1: null, in2: null, out2: null };
-  const sourceSlots = { in1: null, out1: null, in2: null, out2: null };
-  const notes = [];
-  const registeredMarkers = getRegisteredMarkers(employee, shiftAssignment, shiftCandidates);
-  const slots = ["in1", "out1", "in2", "out2"];
-  const targetSlots = { in: ["in1", "in2"], out: ["out1", "out2"] };
-  const punches = slots
-    .filter((slot) => hasClockValue(original[slot]))
-    .map((sourceSlot) => {
-      const originalType = sourceSlot.startsWith("in") ? "in" : "out";
-      const classification = classifyClockValue(
-        original[sourceSlot],
-        originalType,
-        registeredMarkers,
-      );
-      return {
-        sourceSlot,
-        originalType,
-        targetType: classification?.type ?? originalType,
-        value: original[sourceSlot],
-      };
-    });
-  let changed = false;
-
-  punches
-    .filter(({ originalType, targetType }) => originalType === targetType)
-    .forEach(({ sourceSlot, value }) => {
-      adjusted[sourceSlot] = value;
-      sourceSlots[sourceSlot] = sourceSlot;
-    });
-
-  punches
-    .filter(({ originalType, targetType }) => originalType !== targetType)
-    .forEach(({ sourceSlot, targetType, value }) => {
-      const pairNumber = sourceSlot.endsWith("1") ? "1" : "2";
-      const preferredTarget = `${targetType}${pairNumber}`;
-      const availableTarget =
-        (adjusted[preferredTarget] === null && preferredTarget) ||
-        targetSlots[targetType].find((slot) => adjusted[slot] === null);
-
-      if (availableTarget) {
-        adjusted[availableTarget] = value;
-        sourceSlots[availableTarget] = sourceSlot;
-        notes.push(makeMoveNote(value, sourceSlot, availableTarget));
-        changed = true;
-        return;
-      }
-
-      adjusted[sourceSlot] = value;
-      sourceSlots[sourceSlot] = sourceSlot;
-      const targetLabel = targetType === "in" ? "Vào" : "Ra";
-      notes.push(
-        `Không thể chuyển ${formatClockValue(value)} từ ${CLOCK_SLOT_LABELS[sourceSlot]} vì cả hai cột ${targetLabel} đã có dữ liệu; giữ nguyên giá trị`,
-      );
-    });
-
-  return {
-    original,
-    adjusted,
-    sourceSlots,
-    notes,
-    changed,
-    hasLog: notes.length > 0,
-  };
 }
 
 /**
@@ -438,85 +258,6 @@ function getShiftKeyFromName(value) {
   return null;
 }
 
-// Chọn đúng cột ưu tiên sau normalize chỉ để nhận diện full ngày; không đổi selectActualIn/Out hiện hữu.
-function selectPreferredClock(clockValues, primarySlot, fallbackSlot) {
-  const primary = timeValueToMinutes(clockValues?.[primarySlot]);
-  if (primary !== null) return primary;
-  return timeValueToMinutes(clockValues?.[fallbackSlot]);
-}
-
-// Tìm ca có mốc Vào/Ra gần clock thực tế nhất từ chính hồ sơ Employees.
-function findNearestEmployeeShiftKey(actualMinutes, employee, markerSuffix) {
-  if (actualMinutes === null) return null;
-  const markers = ["morning", "afternoon", "evening"]
-    .map((key) => ({
-      key,
-      minutes: timeValueToMinutes(employee?.[`${key}${markerSuffix}`]),
-    }))
-    .filter(({ minutes }) => minutes !== null);
-  if (markers.length === 0) return null;
-
-  return markers.reduce((nearest, marker) =>
-    clockDistance(actualMinutes, marker.minutes) < clockDistance(actualMinutes, nearest.minutes)
-      ? marker
-      : nearest,
-  ).key;
-}
-
-/**
- * Nhận diện ngoại lệ làm full ngày bằng clock đã normalize và giờ ca trong Employees.
- * Vào 1/Ra 1 được ưu tiên; kết quả chỉ phục vụ rule Tổng tăng ca, không thay đổi ca đã chọn.
- */
-export function getMorningToAfternoonFullDayStatus(
-  employee,
-  clockValues,
-  determinedShift,
-  thresholdMinutes = FULL_DAY_SHIFT_MATCH_THRESHOLD_MINUTES,
-  employeeName = "",
-) {
-  // Ba ca TD chồng giờ nên không suy diễn full ngày từ giờ ra gần mốc ca chiều.
-  if (isThuDucEmployee(employee, employeeName)) {
-    return {
-      isFullDay: false,
-      afternoonEndMinutes: null,
-      preferredActualOutMinutes: null,
-    };
-  }
-
-  const actualIn = selectPreferredClock(clockValues, "in1", "in2");
-  const rawActualOut = selectPreferredClock(clockValues, "out1", "out2");
-  const morningStart = timeValueToMinutes(employee?.morningIn);
-  const afternoonEnd = timeValueToMinutes(employee?.afternoonOut);
-  if (
-    actualIn === null ||
-    rawActualOut === null ||
-    morningStart === null ||
-    afternoonEnd === null
-  ) {
-    return {
-      isFullDay: false,
-      afternoonEndMinutes: null,
-      preferredActualOutMinutes: null,
-    };
-  }
-
-  const selectedShiftKey = determinedShift?.key ?? getShiftKeyFromName(determinedShift?.name);
-  const nearestInShiftKey = findNearestEmployeeShiftKey(actualIn, employee, "In");
-  const afternoonOutDistance = clockDistance(rawActualOut, afternoonEnd);
-  const isCheckInMorningShift = selectedShiftKey
-    ? selectedShiftKey === "morning"
-    : nearestInShiftKey === "morning";
-  const isCheckOutAfternoonShift = afternoonOutDistance <= thresholdMinutes;
-  let normalizedAfternoonEnd = afternoonEnd;
-  if (normalizedAfternoonEnd < actualIn) normalizedAfternoonEnd += MINUTES_PER_DAY;
-
-  return {
-    isFullDay: isCheckInMorningShift && isCheckOutAfternoonShift,
-    afternoonEndMinutes: normalizedAfternoonEnd,
-    preferredActualOutMinutes: normalizeActualOut(actualIn, rawActualOut),
-  };
-}
-
 // Chuẩn hóa tên ca không dấu để so với Giờ ĐK.
 function normalizeShiftKey(value) {
   return normalizeLookup(value)
@@ -547,30 +288,6 @@ function scoreShiftByCheckIn(actualInMinutes, shift) {
     return Number.POSITIVE_INFINITY;
   }
   return Math.abs(actualInMinutes - shift.start);
-}
-
-/** Lập hai chỉ mục nhân viên theo mã và tên để tra cứu nhanh từng dòng Excel. */
-export function createEmployeeLookup(employees) {
-  const byCode = new Map();
-  const byName = new Map();
-
-  employees.forEach((employee) => {
-    const code = normalizeEmployeeCode(employee.employeeCode);
-    const name = normalizeLookup(employee.employeeName);
-    if (code && !byCode.has(code)) byCode.set(code, employee);
-    if (name && !byName.has(name)) byName.set(name, employee);
-  });
-
-  return { byCode, byName };
-}
-
-/** Tìm hồ sơ nhân viên từ lookup, ưu tiên mã nhân viên trước tên. */
-export function findRegisteredEmployee(lookup, employeeCode, employeeName) {
-  const code = normalizeEmployeeCode(employeeCode);
-  if (code) return lookup.byCode.get(code) ?? null;
-
-  const name = normalizeLookup(employeeName);
-  return name ? lookup.byName.get(name) ?? null : null;
 }
 
 /**
