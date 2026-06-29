@@ -626,46 +626,117 @@ app.use((request, response, next) => {
   return parser(request, response, next);
 });
 
+// app.post("/api/auth/login", async (request, response) => {
+//   const username = normalizeUsername(request.body?.username);
+//   const password = String(request.body?.password ?? "");
+//   const account = username ? await getAccountByUsername(username) : null;
+
+//   if (!account || !verifyPassword(password, account.password_hash)) {
+//     await logAudit({
+//       user: account ? serializeAccount(account) : { username },
+//       action: "auth.login_failed",
+//       targetType: "account",
+//       targetId: account?.id ?? username,
+//     });
+//     return response.status(401).json({ error: "Ten dang nhap hoac mat khau khong dung." });
+//   }
+
+//   if (account.status !== "Active") {
+//     await logAudit({
+//       user: serializeAccount(account),
+//       action: "auth.login_blocked",
+//       targetType: "account",
+//       targetId: account.id,
+//     });
+//     return response.status(403).json({ error: "Tai khoan dang bi khoa." });
+//   }
+
+//   const token = crypto.randomBytes(32).toString("hex");
+//   const tokenHash = hashToken(token);
+//   const createdAt = nowIso();
+//   const expiresAt = new Date(Date.now() + sessionTtlMs).toISOString();
+//   await accountRepository.createSession({ tokenHash, accountId: account.id, createdAt, expiresAt });
+
+//   const user = serializeAccount(account);
+//   await logAudit({ user, action: "auth.login", targetType: "account", targetId: account.id });
+//   response.cookie?.("timekeeping_session", token, {
+//     httpOnly: true,
+//     sameSite: "lax",
+//     maxAge: sessionTtlMs,
+//     path: "/",
+//   });
+//   return response.json({ token, user, expiresAt });
+// });
+
 app.post("/api/auth/login", async (request, response) => {
-  const username = normalizeUsername(request.body?.username);
-  const password = String(request.body?.password ?? "");
-  const account = username ? await getAccountByUsername(username) : null;
+  try {
+    const username = normalizeUsername(request.body?.username);
+    const password = String(request.body?.password ?? "");
+    const account = username ? await getAccountByUsername(username) : null;
 
-  if (!account || !verifyPassword(password, account.password_hash)) {
-    await logAudit({
-      user: account ? serializeAccount(account) : { username },
-      action: "auth.login_failed",
-      targetType: "account",
-      targetId: account?.id ?? username,
+    if (!account || !verifyPassword(password, account.password_hash)) {
+      await logAudit({
+        user: account ? serializeAccount(account) : { username },
+        action: "auth.login_failed",
+        targetType: "account",
+        targetId: account?.id ?? username,
+      });
+
+      return response.status(401).json({
+        error: "Ten dang nhap hoac mat khau khong dung.",
+      });
+    }
+
+    if (account.status !== "Active") {
+      await logAudit({
+        user: serializeAccount(account),
+        action: "auth.login_blocked",
+        targetType: "account",
+        targetId: account.id,
+      });
+
+      return response.status(403).json({
+        error: "Tai khoan dang bi khoa.",
+      });
+    }
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = hashToken(token);
+    const createdAt = nowIso();
+    const expiresAt = new Date(Date.now() + sessionTtlMs).toISOString();
+
+    await accountRepository.createSession({
+      tokenHash,
+      accountId: account.id,
+      createdAt,
+      expiresAt,
     });
-    return response.status(401).json({ error: "Ten dang nhap hoac mat khau khong dung." });
-  }
 
-  if (account.status !== "Active") {
+    const user = serializeAccount(account);
+
     await logAudit({
-      user: serializeAccount(account),
-      action: "auth.login_blocked",
+      user,
+      action: "auth.login",
       targetType: "account",
       targetId: account.id,
     });
-    return response.status(403).json({ error: "Tai khoan dang bi khoa." });
+
+    response.cookie?.("timekeeping_session", token, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: sessionTtlMs,
+      path: "/",
+    });
+
+    return response.json({ token, user, expiresAt });
+  } catch (error) {
+    console.error("[auth.login] failed:", error);
+    return response.status(500).json({
+      error: "Khong the dang nhap. Loi may chu.",
+      detail: process.env.NODE_ENV === "production" ? undefined : error.message,
+    });
   }
-
-  const token = crypto.randomBytes(32).toString("hex");
-  const tokenHash = hashToken(token);
-  const createdAt = nowIso();
-  const expiresAt = new Date(Date.now() + sessionTtlMs).toISOString();
-  await accountRepository.createSession({ tokenHash, accountId: account.id, createdAt, expiresAt });
-
-  const user = serializeAccount(account);
-  await logAudit({ user, action: "auth.login", targetType: "account", targetId: account.id });
-  response.cookie?.("timekeeping_session", token, {
-    httpOnly: true,
-    sameSite: "lax",
-    maxAge: sessionTtlMs,
-    path: "/",
-  });
-  return response.json({ token, user, expiresAt });
 });
 
 app.get("/api/auth/me", requireAuth, (request, response) => {
