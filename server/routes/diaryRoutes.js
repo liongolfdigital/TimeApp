@@ -5,6 +5,13 @@ export function registerDiaryImportExportRoutes(app, {
   requireDiaryImportExport,
   diaryController,
 }) {
+  ["/api/diary-entries/bulk", "/api/diary/bulk"].forEach((route) => {
+    app.post(route, requireAuth, requireDiaryImportExport, diaryController.importEntries);
+    app.delete(route, requireAuth, requireDiaryImportExport, diaryController.deleteEntries);
+  });
+  ["/api/diary-entries/import", "/api/diary/import"].forEach((route) => {
+    app.post(route, requireAuth, requireDiaryImportExport, diaryController.importEntries);
+  });
   ["/api/diary-entries", "/api/diary"].forEach((route) => {
     app.get(route, requireAuth, diaryController.list);
     app.post(route, requireAuth, diaryController.create);
@@ -13,11 +20,5 @@ export function registerDiaryImportExportRoutes(app, {
   });
   ["/api/diary-entries/export", "/api/diary/export"].forEach((route) => {
     app.get(route, requireAuth, requireDiaryImportExport, diaryController.exportEntries);
-  });
-  ["/api/diary-entries/bulk", "/api/diary/bulk"].forEach((route) => {
-    app.post(route, requireAuth, requireDiaryImportExport, diaryController.importEntries);
-  });
-  ["/api/diary-entries/import", "/api/diary/import"].forEach((route) => {
-    app.post(route, requireAuth, requireDiaryImportExport, diaryController.importEntries);
   });
 }

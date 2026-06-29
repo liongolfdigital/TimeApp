@@ -30,6 +30,7 @@ export function createDiaryService({
   serializeDiaryRow,
   maxImportRows = 5000,
   importBatchSize = 300,
+  maxBulkDeleteRows = 5000,
 }) {
   async function resolveBranch(input, user, existingRow = null, { forceManagerBranch = false } = {}) {
     if (existingRow && !canAccessBranch(user, existingRow.branch)) throw branchForbiddenError();
@@ -140,6 +141,16 @@ export function createDiaryService({
   }
 
   function validateImportSize(entries) {
+    if (!Array.isArray(entries)) {
+      const error = new Error("Body phải có danh sách entries Diary để import.");
+      error.status = 400;
+      throw error;
+    }
+    if (!entries.length) {
+      const error = new Error("Danh sách Diary import không được để trống.");
+      error.status = 400;
+      throw error;
+    }
     if (entries.length <= maxImportRows) return;
     const error = new Error("File Diary quá lớn, vui lòng chia nhỏ file để import.");
     error.status = 413;
@@ -232,6 +243,50 @@ export function createDiaryService({
     };
   }
 
+  function normalizeBulkDeleteIds(ids) {
+    if (!Array.isArray(ids)) {
+      const error = new Error("Body phải có danh sách ids Diary cần xóa.");
+      error.status = 400;
+      throw error;
+    }
+    const normalizedIds = [...new Set(ids.map(normalizeText))];
+    if (!normalizedIds.length) {
+      const error = new Error("Danh sách ids Diary cần xóa không được để trống.");
+      error.status = 400;
+      throw error;
+    }
+    if (normalizedIds.some((id) => !UUID_PATTERN.test(id))) {
+      const error = new Error("Danh sách ids Diary cần xóa không hợp lệ.");
+      error.status = 400;
+      throw error;
+    }
+    if (normalizedIds.length > maxBulkDeleteRows) {
+      const error = new Error("Danh sách Diary cần xóa quá lớn, vui lòng chia thành nhiều lần.");
+      error.status = 413;
+      throw error;
+    }
+    return normalizedIds;
+  }
+
+  async function deleteDiaryRecords(ids, user) {
+    const normalizedIds = normalizeBulkDeleteIds(ids);
+    return repository.transaction(async (txRepository) => {
+      const rows = await txRepository.findManyByIds(normalizedIds);
+      if (rows.some((row) => !canAccessBranch(user, row.branch))) {
+        throw branchForbiddenError();
+      }
+
+      const existingIds = rows.map(({ id }) => id);
+      const attachments = await txRepository.listAttachmentsByDiaryIds(existingIds);
+      const deletedIds = await txRepository.deleteMany(existingIds);
+      return {
+        deletedCount: deletedIds.length,
+        deletedIds,
+        attachments,
+      };
+    });
+  }
+
   return {
     findRow: repository.findById,
     listForUser,
@@ -240,6 +295,7 @@ export function createDiaryService({
     deleteById: repository.deleteById,
     serializeRow: serializeDiaryRow,
     importDiaryRecords,
+    deleteDiaryRecords,
     rollback: async () => {},
   };
 }

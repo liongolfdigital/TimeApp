@@ -9,7 +9,6 @@ import { del, put } from "@vercel/blob";
 import {
   query,
   requireDatabaseUrl,
-  transaction,
 } from "./server/db/db.mjs";
 import { createAuthMiddlewares } from "./server/middlewares/authMiddlewares.js";
 import { createDiaryRepository } from "./server/repositories/diaryRepository.js";
@@ -444,6 +443,7 @@ const diaryController = createDiaryController({
   logAudit,
   normalizeBranch,
   handleApiError,
+  removeStoredFile,
 });
 const employeeController = createEmployeeController({
   employeeService,
@@ -836,48 +836,6 @@ registerEmployeeRoutes(app, {
   requireAuth,
   requireAdmin,
   controller: employeeController,
-});
-
-app.delete("/api/diary/bulk", requireAuth, requireDiaryImportExport, async (request, response) => {
-  const ids = Array.isArray(request.body?.ids)
-    ? [...new Set(request.body.ids.map((id) => normalizeText(id)).filter(isUuid))]
-    : [];
-  if (!ids.length) {
-    return response.status(400).json({ error: "Danh sach Diary can xoa khong duoc de trong." });
-  }
-
-  const diaryRows = (await Promise.all(ids.map((id) => diaryService.findRow(id)))).filter(Boolean);
-  const forbiddenRow = diaryRows.find((row) => !canAccessBranch(request.user, row.branch));
-  if (forbiddenRow) return handleApiError(response, branchForbiddenError());
-
-  const deletedIds = diaryRows.map(({ id }) => id);
-  let deletedAttachments = [];
-  try {
-    deletedAttachments = await transaction(async (tx) => {
-      const attachments = [];
-      for (const id of deletedIds) {
-        const attachmentRows = await tx.query(
-          "SELECT * FROM diary_attachments WHERE diary_entry_id = $1",
-          [id],
-        );
-        attachments.push(...attachmentRows.rows);
-        await tx.query("DELETE FROM diary_attachments WHERE diary_entry_id = $1", [id]);
-        await tx.query("DELETE FROM diary_entries WHERE id = $1", [id]);
-      }
-      return attachments;
-    });
-  } catch (error) {
-    return handleApiError(response, error);
-  }
-
-  await Promise.all(deletedAttachments.map(removeStoredFile));
-  await logAudit({
-    user: request.user,
-    action: "diary.bulk_delete",
-    targetType: "diary",
-    detail: { ids: deletedIds, deletedCount: deletedIds.length },
-  });
-  return response.json({ deletedCount: deletedIds.length, deletedIds });
 });
 
 registerDiaryImportExportRoutes(app, {

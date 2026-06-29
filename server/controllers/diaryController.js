@@ -1,4 +1,10 @@
-export function createDiaryController({ diaryService, logAudit, normalizeBranch, handleApiError }) {
+export function createDiaryController({
+  diaryService,
+  logAudit,
+  normalizeBranch,
+  handleApiError,
+  removeStoredFile = async () => {},
+}) {
   const auditDetail = (entry) => ({
     employeeCode: entry.employeeCode,
     employeeName: entry.employeeName,
@@ -43,9 +49,10 @@ export function createDiaryController({ diaryService, logAudit, normalizeBranch,
       return response.json(await diaryService.listForExport(request.user));
     },
     async importEntries(request, response) {
-      const entries = Array.isArray(request.body?.entries) ? request.body.entries : [];
+      const entries = request.body?.entries;
+      const receivedRows = Array.isArray(entries) ? entries.length : 0;
       const startedAt = Date.now();
-      console.info("[Diary import] received rows", entries.length);
+      console.info("[Diary import] received rows", receivedRows);
       try {
         const result = await diaryService.importDiaryRecords(entries, request.user);
         await logAudit({
@@ -71,7 +78,58 @@ export function createDiaryController({ diaryService, logAudit, normalizeBranch,
         return response.json({ ...result, totalMs });
       } catch (error) {
         console.error("[Diary import] failed", {
-          receivedRows: entries.length,
+          receivedRows,
+          totalMs: Date.now() - startedAt,
+          error: error.message,
+        });
+        return handleApiError(response, error);
+      }
+    },
+    async deleteEntries(request, response) {
+      const startedAt = Date.now();
+      try {
+        const result = await diaryService.deleteDiaryRecords(request.body?.ids, request.user);
+        const cleanupResults = await Promise.allSettled(
+          result.attachments.map(removeStoredFile),
+        );
+        const cleanupFailed = cleanupResults.filter(({ status }) => status === "rejected").length;
+        if (cleanupFailed) {
+          console.error("[Diary bulk delete] attachment cleanup failed", {
+            cleanupFailed,
+            deletedCount: result.deletedCount,
+          });
+        }
+        try {
+          await logAudit({
+            user: request.user,
+            action: "diary.bulk_delete",
+            targetType: "diary",
+            detail: {
+              ids: result.deletedIds,
+              deletedCount: result.deletedCount,
+              branch: request.user.role === "Manager"
+                ? normalizeBranch(request.user.branch)
+                : "ALL",
+            },
+          });
+        } catch (auditError) {
+          console.error("[Diary bulk delete] audit failed", {
+            deletedCount: result.deletedCount,
+            error: auditError.message,
+          });
+        }
+        console.info("[Diary bulk delete] completed", {
+          requestedRows: Array.isArray(request.body?.ids) ? request.body.ids.length : 0,
+          deletedRows: result.deletedCount,
+          totalMs: Date.now() - startedAt,
+        });
+        return response.json({
+          deletedCount: result.deletedCount,
+          deletedIds: result.deletedIds,
+        });
+      } catch (error) {
+        console.error("[Diary bulk delete] failed", {
+          requestedRows: Array.isArray(request.body?.ids) ? request.body.ids.length : 0,
           totalMs: Date.now() - startedAt,
           error: error.message,
         });

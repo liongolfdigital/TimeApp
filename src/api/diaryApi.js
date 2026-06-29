@@ -1,6 +1,6 @@
 import { apiRequest } from "./apiClient.js";
 
-// Adapter REST cho CRUD, export và bulk replace Diary.
+// Adapter REST cho CRUD, export, import/upsert và bulk delete Diary.
 export const diaryApi = {
   list: () => apiRequest("/api/diary"),
   listForExport: () => apiRequest("/api/diary/export"),

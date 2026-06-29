@@ -98,6 +98,14 @@ export function createDiaryRepository(database) {
       const result = await database.query("SELECT * FROM diary_entries WHERE id = $1", [id]);
       return result.rows[0] ?? null;
     },
+    async findManyByIds(ids) {
+      if (!ids.length) return [];
+      const result = await database.query(
+        "SELECT * FROM diary_entries WHERE id = ANY($1::uuid[])",
+        [ids],
+      );
+      return result.rows;
+    },
     async listAll() {
       const result = await database.query("SELECT * FROM diary_entries ORDER BY date DESC, updated_at DESC");
       return result.rows;
@@ -136,6 +144,22 @@ export function createDiaryRepository(database) {
     async deleteById(id) {
       if (!isUuid(id)) return;
       await database.query("DELETE FROM diary_entries WHERE id = $1", [id]);
+    },
+    async listAttachmentsByDiaryIds(ids) {
+      if (!ids.length) return [];
+      const result = await database.query(
+        "SELECT * FROM diary_attachments WHERE diary_entry_id = ANY($1::uuid[])",
+        [ids],
+      );
+      return result.rows;
+    },
+    async deleteMany(ids) {
+      if (!ids.length) return [];
+      const result = await database.query(
+        "DELETE FROM diary_entries WHERE id = ANY($1::uuid[]) RETURNING id",
+        [ids],
+      );
+      return result.rows.map(({ id }) => id);
     },
     async deleteAll() {
       await database.query("DELETE FROM diary_entries");

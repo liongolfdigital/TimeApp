@@ -298,7 +298,9 @@ export default function DiaryPage({ // input data
   /** Gọi API bulk delete; chỉ fallback xóa cache local khi endpoint server không sẵn sàng. */
   const requestDeleteDiaryIds = async (ids) => {
     try {
-      return await diaryApi.removeMany(ids);
+      const result = await diaryApi.removeMany(ids);
+      const refreshedEntries = await diaryApi.list();
+      return { ...result, refreshedEntries };
     } catch (error) {
       if (!isApiUnavailableError(error)) throw error;
       console.warn("[TimeKeeping data] Diary bulk delete API unavailable, deleting from localStorage cache.", {
@@ -311,10 +313,14 @@ export default function DiaryPage({ // input data
   };
 
   /** Đồng bộ entries, attachment, modal chi tiết và selection sau khi server xóa thành công. */
-  const applyDeletedDiaryIds = (deletedIds) => {
+  const applyDeletedDiaryIds = (deletedIds, refreshedEntries) => {
     const deletedSet = new Set(deletedIds);
     onAttachmentsChange(attachments.filter(({ diaryEntryId }) => !deletedSet.has(diaryEntryId)));
-    onEntriesChange(entries.filter(({ id }) => !deletedSet.has(id)));
+    onEntriesChange(
+      Array.isArray(refreshedEntries)
+        ? refreshedEntries
+        : entries.filter(({ id }) => !deletedSet.has(id)),
+    );
     setSelectedDiaryIds((current) => current.filter((id) => !deletedSet.has(id)));
     if (deletedSet.has(selectedEntryId)) setSelectedEntryId("");
   };
@@ -331,7 +337,7 @@ export default function DiaryPage({ // input data
     try {
       const result = await requestDeleteDiaryIds([entry.id]);
       if (!result.deletedIds?.includes(entry.id)) throw new Error("Không tìm thấy dòng Diary cần xóa.");
-      applyDeletedDiaryIds(result.deletedIds);
+      applyDeletedDiaryIds(result.deletedIds, result.refreshedEntries);
       setMessage({ type: "success", text: "Đã xóa dòng Diary và hồ sơ đính kèm." });
       onLogAction?.("diary.delete.ui", {
         targetType: "diary",
@@ -358,7 +364,7 @@ export default function DiaryPage({ // input data
       });
       if (!result.confirmed) return;
 
-      applyDeletedDiaryIds(result.deletedIds);
+      applyDeletedDiaryIds(result.deletedIds, result.refreshedEntries);
       const failedCount = requestedCount - result.deletedCount;
       setMessage(failedCount > 0
         ? { type: "error", text: `Đã xóa ${result.deletedCount} ghi chú Diary; ${failedCount} dòng chưa xóa được và vẫn được chọn.` }
@@ -374,7 +380,7 @@ export default function DiaryPage({ // input data
     }
   };
 
-  // Import Diary.xlsx, ép scope Manager, merge và bulk-save qua API hoặc cache fallback.
+  // Import Diary.xlsx: chỉ gửi dòng trong file, ép scope Manager, rồi tải lại danh sách từ API.
   const handleImport = async (file) => {
     if (!file) return;
     if (!allowImportExport) {

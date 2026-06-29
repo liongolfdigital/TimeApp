@@ -65,6 +65,7 @@ export async function confirmAndDeleteSelectedDiaries(
   const result = await deleteMany(ids);
   const deletedIds = Array.isArray(result?.deletedIds) ? result.deletedIds : ids;
   return {
+    ...result,
     confirmed: true,
     deletedCount: Number(result?.deletedCount) || deletedIds.length,
     deletedIds,
