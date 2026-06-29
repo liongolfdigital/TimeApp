@@ -6,5 +6,6 @@ export const employeeApi = {
   create: (employee) => apiRequest("/api/employees", { method: "POST", body: employee }),
   update: (employee) => apiRequest(`/api/employees/${encodeURIComponent(employee.id)}`, { method: "PUT", body: employee }),
   remove: (id) => apiRequest(`/api/employees/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  removeMany: (ids) => apiRequest("/api/employees/bulk", { method: "DELETE", body: { ids } }),
   replaceAll: (employees) => apiRequest("/api/employees/bulk", { method: "POST", body: { employees } }),
 };

@@ -80,6 +80,14 @@ export function createEmployeeRepository(database) {
       if (!isUuid(id)) return;
       await database.query("DELETE FROM employees WHERE id = $1", [id]);
     },
+    async deleteMany(ids) {
+      if (!ids.length) return [];
+      const result = await database.query(
+        "DELETE FROM employees WHERE id = ANY($1::uuid[]) RETURNING id",
+        [ids],
+      );
+      return result.rows.map(({ id }) => id);
+    },
     async deleteAll() {
       await database.query("DELETE FROM employees");
     },

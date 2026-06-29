@@ -15,6 +15,7 @@ export function createEmployeeService({
   canAccessBranch,
   branchForbiddenError,
   serializeEmployeeRow,
+  maxBulkDeleteRows = 5000,
 }) {
   function resolveBranch(input, user, existingRow = null) {
     if (existingRow && !canAccessBranch(user, existingRow.branch)) {
@@ -66,12 +67,47 @@ export function createEmployeeService({
     });
   }
 
+  function normalizeBulkDeleteIds(ids, user) {
+    if (user?.role !== "Admin") {
+      const error = new Error("Ban khong co quyen truy cap chuc nang nay");
+      error.status = 403;
+      throw error;
+    }
+    if (!Array.isArray(ids)) {
+      const error = new Error("Body phai co danh sach ids nhan vien can xoa.");
+      error.status = 400;
+      throw error;
+    }
+    const normalizedIds = [...new Set(ids.map((id) => normalizeText(id)))];
+    if (!normalizedIds.length) {
+      const error = new Error("Danh sach ids nhan vien can xoa khong duoc de trong.");
+      error.status = 400;
+      throw error;
+    }
+    if (normalizedIds.some((id) => !UUID_PATTERN.test(id))) {
+      const error = new Error("Danh sach ids nhan vien can xoa khong hop le.");
+      error.status = 400;
+      throw error;
+    }
+    if (normalizedIds.length > maxBulkDeleteRows) {
+      const error = new Error("Danh sach nhan vien can xoa qua lon, vui long chia thanh nhieu lan.");
+      error.status = 413;
+      throw error;
+    }
+    return normalizedIds;
+  }
+
+  async function deleteMany(ids, user) {
+    return repository.deleteMany(normalizeBulkDeleteIds(ids, user));
+  }
+
   return {
     findRow: repository.findById,
     listAll: async () => (await repository.listAll()).map(serializeEmployeeRow),
     listForUser,
     save,
     deleteById: repository.deleteById,
+    deleteMany,
     replaceAll,
     serializeRow: serializeEmployeeRow,
   };

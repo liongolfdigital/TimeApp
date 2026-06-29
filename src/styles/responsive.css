@@ -132,6 +132,8 @@
   .toolbar-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .toolbar-actions .button { width: 100%; min-width: 0; min-height: 44px; padding: 7px 10px; line-height: 1.25; }
   .toolbar-actions .button-primary { grid-column: 1 / -1; }
+  .toolbar-actions .employee-bulk-delete { grid-column: 1 / -1; }
+  .employee-selection-column input { width: 22px; height: 22px; }
   .employee-filters { align-items: stretch; }
   .search-field, .select-field {
     width: 100%;
@@ -155,6 +157,10 @@
   th, td { padding: 11px 12px; }
   .employee-table th, .employee-table td { min-width: 96px; }
   .employee-table th:nth-child(4), .employee-table td:nth-child(4) { min-width: 168px; }
+  .employee-table-selectable th:nth-child(4),
+  .employee-table-selectable td:nth-child(4) { min-width: 120px; }
+  .employee-table-selectable th:nth-child(5),
+  .employee-table-selectable td:nth-child(5) { min-width: 168px; }
   .diary-table .diary-cell-reason,
   .diary-table .diary-cell-attachments,
   .diary-table .diary-cell-creatorName {

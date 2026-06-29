@@ -3,6 +3,12 @@ import EmployeeForm from "./EmployeeForm";
 import {AlertIcon, DownloadIcon, EditIcon, FilterIcon, PlusIcon, SearchIcon, TrashIcon, UploadIcon, UsersIcon} from "./Icons";
 import {exportEmployeesToExcel, importEmployeesFromExcel} from "../employees/employeeExcel";
 import {EMPLOYEE_FIELDS, getEmployeeGroup, mergeEmployeeLists, normalizeLookup, sanitizeEmployee} from "../employees/employeeModel";
+import {
+  getEmployeeBulkDeleteLabel,
+  getVisibleEmployeeSelectionState,
+  toggleAllVisibleEmployeeSelection,
+  toggleEmployeeSelection,
+} from "../employees/employeeSelection";
 import { canDeleteEmployee, canImportExport, canManageEmployee, filterEmployeesForUser, getRecordBranch, isManager} from "../auth/authorization";
 import { isApiUnavailableError } from "../api/apiClient";
 import { employeeApi } from "../api/employeeApi";
@@ -11,6 +17,7 @@ import { employeeApi } from "../api/employeeApi";
 export default function EmployeePage({currentUser, employees, onEmployeesChange, onLogAction}) {
   // State filter, modal chỉnh sửa, thông báo và tiến trình import của trang.
   const importInputRef = useRef(null);
+  const selectAllCheckboxRef = useRef(null);
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
   const [shiftFilter, setShiftFilter] = useState("");
@@ -19,6 +26,8 @@ export default function EmployeePage({currentUser, employees, onEmployeesChange,
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [message, setMessage] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false);
 
   // Chỉ giữ nhân viên thuộc phạm vi user trước khi tạo filter hoặc render.
   const visibleEmployees = useMemo(
@@ -57,6 +66,29 @@ export default function EmployeePage({currentUser, employees, onEmployeesChange,
       return matchesSearch && matchesBranch && matchesShift && matchesGroup;
     });
   }, [branchFilter, groupFilter, search, shiftFilter, visibleEmployees]);
+
+  const visibleEmployeeIds = useMemo(
+    () => filteredEmployees.map(({ id }) => id).filter(Boolean),
+    [filteredEmployees],
+  );
+  const visibleSelectionState = useMemo(
+    () => getVisibleEmployeeSelectionState(selectedEmployeeIds, visibleEmployeeIds),
+    [selectedEmployeeIds, visibleEmployeeIds],
+  );
+
+  useEffect(() => {
+    if (selectAllCheckboxRef.current) {
+      selectAllCheckboxRef.current.indeterminate = visibleSelectionState.someSelected;
+    }
+  }, [visibleSelectionState.someSelected]);
+
+  useEffect(() => {
+    const validIds = new Set(employees.map(({ id }) => id).filter(Boolean));
+    setSelectedEmployeeIds((current) => {
+      const next = current.filter((id) => validIds.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [employees]);
 
   // Ghi số lượng sau phân quyền/filter trong development để hỗ trợ audit dữ liệu.
   useEffect(() => {
@@ -127,6 +159,91 @@ export default function EmployeePage({currentUser, employees, onEmployeesChange,
     }
   };
 
+  const toggleSelectEmployee = (id) => {
+    setSelectedEmployeeIds((current) => toggleEmployeeSelection(current, id));
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedEmployeeIds((current) =>
+      toggleAllVisibleEmployeeSelection(current, visibleEmployeeIds));
+  };
+
+  const handleDeleteSelectedEmployees = async () => {
+    if (!allowDelete || !selectedEmployeeIds.length || isDeletingSelected) return;
+    const requestedIds = [...new Set(selectedEmployeeIds.filter(Boolean))];
+    if (!requestedIds.length) return;
+    if (!window.confirm(
+      `Bạn có chắc muốn xóa ${requestedIds.length} nhân viên đã chọn không? Hành động này không thể hoàn tác.`,
+    )) return;
+
+    setMessage(null);
+    setIsDeletingSelected(true);
+    try {
+      let result;
+      let nextEmployees;
+      let reloadWarning = false;
+      try {
+        result = await employeeApi.removeMany(requestedIds);
+        try {
+          nextEmployees = await employeeApi.list();
+        } catch (reloadError) {
+          console.error("[TimeKeeping data] Employee list reload failed after bulk delete.", reloadError);
+          const deletedSet = new Set(result.deletedIds ?? requestedIds);
+          nextEmployees = employees.filter(({ id }) => !deletedSet.has(id));
+          reloadWarning = true;
+        }
+      } catch (error) {
+        if (!isApiUnavailableError(error)) throw error;
+        console.warn("[TimeKeeping data] Employee bulk delete API unavailable, deleting from localStorage cache.", {
+          endpoint: error.endpoint,
+          status: error.status,
+          message: error.message,
+        });
+        result = {
+          deletedCount: requestedIds.length,
+          deletedIds: requestedIds,
+          localOnly: true,
+        };
+        const deletedSet = new Set(requestedIds);
+        nextEmployees = employees.filter(({ id }) => !deletedSet.has(id));
+      }
+
+      const deletedIds = Array.isArray(result.deletedIds) ? result.deletedIds : requestedIds;
+      const deletedCount = Number(result.deletedCount) || deletedIds.length;
+      const remainingIds = new Set(nextEmployees.map(({ id }) => id));
+      onEmployeesChange(nextEmployees);
+      setSelectedEmployeeIds((current) => current.filter((id) => remainingIds.has(id)));
+
+      const failedCount = requestedIds.length - deletedCount;
+      if (failedCount > 0) {
+        setMessage({
+          type: "error",
+          text: "Xóa thất bại một số nhân viên. Vui lòng thử lại.",
+        });
+      } else {
+        setSelectedEmployeeIds([]);
+        setMessage({
+          type: reloadWarning ? "error" : "success",
+          text: reloadWarning
+            ? `Đã xóa ${deletedCount} nhân viên nhưng chưa thể tải lại danh sách từ máy chủ.`
+            : `Đã xóa ${deletedCount} nhân viên.`,
+        });
+      }
+      onLogAction?.("employee.bulk_delete.ui", {
+        targetType: "employee",
+        detail: { ids: deletedIds, deletedCount, failedCount },
+      });
+    } catch (error) {
+      console.error("[TimeKeeping data] Employee bulk delete failed.", error);
+      setMessage({
+        type: "error",
+        text: error.message || "Xóa thất bại một số nhân viên. Vui lòng thử lại.",
+      });
+    } finally {
+      setIsDeletingSelected(false);
+    }
+  };
+
   // Xác nhận và xóa nhân viên khi user có quyền; fallback xóa cache nếu API không có.
   const deleteEmployee = async (employee) => {
     if (!allowDelete) {
@@ -149,6 +266,7 @@ export default function EmployeePage({currentUser, employees, onEmployeesChange,
         });
       }
       onEmployeesChange(employees.filter((item) => item.id !== employee.id));
+      setSelectedEmployeeIds((current) => current.filter((id) => id !== employee.id));
       setMessage({ type: "success", text: "Đã xóa nhân viên khỏi danh sách." });
       onLogAction?.("employee.delete.ui", {
         targetType: "employee",
@@ -271,6 +389,17 @@ export default function EmployeePage({currentUser, employees, onEmployeesChange,
             <button className="button button-primary" type="button" onClick={openCreateForm}>
               <PlusIcon size={18} /> Thêm nhân viên
             </button>
+            {allowDelete && (
+              <button
+                className="button button-secondary employee-bulk-delete"
+                type="button"
+                disabled={!selectedEmployeeIds.length || isDeletingSelected}
+                onClick={handleDeleteSelectedEmployees}
+              >
+                <TrashIcon size={18} />
+                {getEmployeeBulkDeleteLabel(selectedEmployeeIds.length, isDeletingSelected)}
+              </button>
+            )}
           </div>
 
           <div className="employee-filters">
@@ -315,13 +444,31 @@ export default function EmployeePage({currentUser, employees, onEmployeesChange,
 
         <div className="employee-table-meta">
           <span>Hiển thị <strong>{filteredEmployees.length}</strong> / {visibleEmployees.length} nhân viên</span>
+          {selectedEmployeeIds.length > 0 && (
+            <span className="employee-selection-meta">
+              Đã chọn <strong>{selectedEmployeeIds.length}</strong> nhân viên
+            </span>
+          )}
           <span>{isManager(currentUser) ? `Manager chi nhánh ${currentUser.branch}` : "Dữ liệu được lưu qua API có kiểm tra phân quyền"}</span>
         </div>
 
         <div className="employee-table-shell">
-          <table className="employee-table">
+          <table className={`employee-table ${allowDelete ? "employee-table-selectable" : ""}`}>
             <thead>
               <tr>
+                {allowDelete && (
+                  <th className="employee-selection-column">
+                    <input
+                      ref={selectAllCheckboxRef}
+                      type="checkbox"
+                      checked={visibleSelectionState.allSelected}
+                      aria-checked={visibleSelectionState.someSelected ? "mixed" : visibleSelectionState.allSelected}
+                      disabled={!visibleEmployeeIds.length || isDeletingSelected}
+                      onChange={toggleSelectAllVisible}
+                      aria-label="Chọn tất cả nhân viên đang hiển thị"
+                    />
+                  </th>
+                )}
                 <th className="index-column">STT</th>
                 {EMPLOYEE_FIELDS.map(({ label }) => <th key={label}>{label}</th>)}
                 <th className="actions-column">Thao tác</th>
@@ -330,7 +477,18 @@ export default function EmployeePage({currentUser, employees, onEmployeesChange,
             <tbody>
               {filteredEmployees.length > 0 ? (
                 filteredEmployees.map((employee, index) => (
-                  <tr key={employee.id}>
+                  <tr className={selectedEmployeeIds.includes(employee.id) ? "is-selected" : ""} key={employee.id}>
+                    {allowDelete && (
+                      <td className="employee-selection-column">
+                        <input
+                          type="checkbox"
+                          checked={selectedEmployeeIds.includes(employee.id)}
+                          disabled={isDeletingSelected}
+                          onChange={() => toggleSelectEmployee(employee.id)}
+                          aria-label={`Chọn ${employee.employeeName || employee.employeeCode}`}
+                        />
+                      </td>
+                    )}
                     <td className="index-column">{index + 1}</td>
                     {EMPLOYEE_FIELDS.map(({ key }) => (
                       <td key={key} title={employee[key]}>{employee[key] || <span className="empty-cell">—</span>}</td>
@@ -345,7 +503,7 @@ export default function EmployeePage({currentUser, employees, onEmployeesChange,
                 ))
               ) : (
                 <tr>
-                  <td className="employee-empty" colSpan={EMPLOYEE_FIELDS.length + 2}>
+                  <td className="employee-empty" colSpan={EMPLOYEE_FIELDS.length + (allowDelete ? 3 : 2)}>
                     <UsersIcon size={30} />
                     <strong>{visibleEmployees.length ? "Không có kết quả phù hợp" : "Chưa có danh sách nhân viên"}</strong>
                     <span>{allowImportExport ? "Import file RegisHours.xlsx hoặc thêm nhân viên mới." : "Bạn chỉ thấy nhân viên thuộc chi nhánh được phân quyền."}</span>

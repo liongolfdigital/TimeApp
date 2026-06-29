@@ -1,5 +1,6 @@
 /** Đăng ký nhóm route CRUD/bulk nhân viên và middleware quyền tương ứng lên Express app. */
 export function registerEmployeeRoutes(app, { requireAuth, requireAdmin, controller }) {
+  app.delete("/api/employees/bulk", requireAuth, requireAdmin, controller.bulkDelete);
   app.get("/api/employees", requireAuth, controller.list);
   app.post("/api/employees", requireAuth, controller.create);
   app.put("/api/employees/:id", requireAuth, controller.update);

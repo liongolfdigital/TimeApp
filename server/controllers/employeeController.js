@@ -49,5 +49,26 @@ export function createEmployeeController({ employeeService, logAudit, handleApiE
         return handleApiError(response, error);
       }
     },
+    async bulkDelete(request, response) {
+      try {
+        const deletedIds = await employeeService.deleteMany(request.body?.ids, request.user);
+        try {
+          await logAudit({
+            user: request.user,
+            action: "employee.bulk_delete",
+            targetType: "employee",
+            detail: { ids: deletedIds, deletedCount: deletedIds.length },
+          });
+        } catch (auditError) {
+          console.error("[Employee bulk delete] audit failed.", auditError);
+        }
+        return response.json({
+          deletedCount: deletedIds.length,
+          deletedIds,
+        });
+      } catch (error) {
+        return handleApiError(response, error);
+      }
+    },
   };
 }

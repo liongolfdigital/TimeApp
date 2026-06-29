@@ -70,6 +70,45 @@
 
 .employee-table .actions-column { min-width: 92px; width: 92px; }
 
+.employee-table .employee-selection-column {
+  min-width: 48px;
+  width: 48px;
+  padding: 8px;
+  text-align: center;
+}
+
+.employee-selection-column input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  vertical-align: middle;
+  accent-color: var(--green);
+  cursor: pointer;
+}
+
+.employee-selection-column input:disabled { cursor: not-allowed; }
+
+.employee-table tbody tr.is-selected td { background: #fff8f5; }
+
+.button.employee-bulk-delete {
+  color: var(--error);
+  border-color: #efcbc6;
+  background: #fff7f5;
+}
+
+.button.employee-bulk-delete:hover:not(:disabled) {
+  border-color: var(--error);
+  background: #fff0ed;
+}
+
+.employee-selection-meta { color: var(--error); }
+
+.employee-table-selectable th:nth-child(4),
+.employee-table-selectable td:nth-child(4) { min-width: 130px; }
+
+.employee-table-selectable th:nth-child(5),
+.employee-table-selectable td:nth-child(5) { min-width: 190px; }
+
 .row-actions { display: flex; justify-content: center; gap: 5px; }
 
 .row-actions button { width: 31px; height: 31px; display: grid; place-items: center; color: var(--green); border: 1px solid #d9e3db; border-radius: 8px; background: #fff; cursor: pointer; }
