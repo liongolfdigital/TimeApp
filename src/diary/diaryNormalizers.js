@@ -1,5 +1,5 @@
 import { normalizeLookup, normalizeText } from "../employees/employeeModel.js";
-import { DIARY_VIOLATION_OPTIONS } from "./diaryConstants.js";
+import { DIARY_NOTE_TYPE_OPTIONS } from "./diaryConstants.js";
 import {
   getDiaryWeekday,
   normalizeDiaryDate,
@@ -22,20 +22,20 @@ function normalizeViolationKey(value) {
   return stripVietnameseMarks(value).replace(/[\s/_-]+/g, " ");
 }
 
-const DIARY_VIOLATION_LOOKUP = new Map(
-  DIARY_VIOLATION_OPTIONS.map((option) => [normalizeViolationKey(option), option]),
+const DIARY_NOTE_TYPE_LOOKUP = new Map(
+  DIARY_NOTE_TYPE_OPTIONS.map((option) => [normalizeViolationKey(option), option]),
 );
 const DIARY_VIOLATION_ALIASES = new Map([
   ["off > 2 ngay", "OFF"],
   ["off > 2", "OFF"],
 ]);
 
-export function normalizeDiaryViolationType(value) {
+export function normalizeDiaryNoteType(value) {
   const key = normalizeViolationKey(value);
-  return DIARY_VIOLATION_LOOKUP.get(key) ?? DIARY_VIOLATION_ALIASES.get(key) ?? "";
+  return DIARY_NOTE_TYPE_LOOKUP.get(key) ?? DIARY_VIOLATION_ALIASES.get(key) ?? "";
 }
 
-export function normalizeDiaryViolationTypes(value) {
+export function normalizeDiaryNoteTypes(value) {
   let rawItems = [];
   if (Array.isArray(value)) {
     rawItems = value;
@@ -53,19 +53,26 @@ export function normalizeDiaryViolationTypes(value) {
       rawItems = text.split(/[;,|]+/);
     }
   }
-  return [...new Set(rawItems.map(normalizeDiaryViolationType).filter(Boolean))];
+  return [...new Set(rawItems.map(normalizeDiaryNoteType).filter(Boolean))];
 }
 
-export function formatDiaryViolationTypes(value, emptyText = "") {
-  const types = normalizeDiaryViolationTypes(value);
+export function formatDiaryNoteTypes(value, emptyText = "") {
+  const types = normalizeDiaryNoteTypes(value);
   return types.length ? types.join(", ") : emptyText;
 }
 
+// Alias tương thích cho bộ xử lý chấm công và dữ liệu cũ.
+export const normalizeDiaryViolationType = normalizeDiaryNoteType;
+export const normalizeDiaryViolationTypes = normalizeDiaryNoteTypes;
+export const formatDiaryViolationTypes = formatDiaryNoteTypes;
+
 export function normalizeDiaryPermission(value) {
+  if (value === true) return "Có phép";
+  if (value === false) return "Không phép";
   const text = normalizeText(value);
   const normalized = stripVietnameseMarks(text).replace(/[\s/_-]+/g, " ");
-  if (["co phep", "co", "yes", "1"].includes(normalized)) return "Có phép";
-  if (["khong phep", "khong", "no", "0"].includes(normalized)) return "Không phép";
+  if (["co phep", "co", "yes", "true", "1"].includes(normalized)) return "Có phép";
+  if (["khong phep", "khong", "no", "false", "0"].includes(normalized)) return "Không phép";
   return text;
 }
 
@@ -74,25 +81,99 @@ export function normalizeDiaryEmployeeCode(value) {
   return /^\d+$/.test(code) ? code.replace(/^0+(?=\d)/, "") : code;
 }
 
-export function sanitizeDiaryEntry(entry) {
-  const date = normalizeDiaryDate(entry.date);
-  const violationTypes = normalizeDiaryViolationTypes(
-    entry.violationTypes ?? entry.violation_types ?? entry.tags,
+/** Chuẩn hóa giờ từ text, Excel serial hoặc Date về HH:mm. */
+export function normalizeDiaryTime(value) {
+  if (value === null || value === undefined || value === "") return "";
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${String(value.getHours()).padStart(2, "0")}:${String(value.getMinutes()).padStart(2, "0")}`;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const fraction = ((value % 1) + 1) % 1;
+    const totalMinutes = Math.round(fraction * 24 * 60) % (24 * 60);
+    return `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(totalMinutes % 60).padStart(2, "0")}`;
+  }
+
+  const text = normalizeText(value);
+  const timeMatch = text.match(/^(\d{1,2}):(\d{1,2})(?::\d{1,2})?$/);
+  if (timeMatch) {
+    const hours = Number(timeMatch[1]);
+    const minutes = Number(timeMatch[2]);
+    return hours <= 23 && minutes <= 59
+      ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
+      : "";
+  }
+
+  if (/^-?\d+(?:\.\d+)?$/.test(text)) {
+    return normalizeDiaryTime(Number(text));
+  }
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? "" : normalizeDiaryTime(parsed);
+}
+
+/** Chuẩn hóa schema mới và đồng thời phát các alias cũ để không vỡ bộ xử lý chấm công. */
+export function sanitizeDiaryEntry(entry = {}) {
+  const date = normalizeDiaryDate(entry.date ?? entry["Ngày"]);
+  const note = normalizeText(entry.note ?? entry.reason ?? entry["Ghi chú"]);
+  const permissionStatus = normalizeDiaryPermission(
+    entry.permissionStatus
+      ?? entry.permission
+      ?? entry.permissionType
+      ?? entry.isPermitted
+      ?? entry["Có/Không phép"],
   );
+  const recordMaker = normalizeText(
+    entry.recordMaker
+      ?? entry.creatorName
+      ?? entry.reporterName
+      ?? entry.createdBy
+      ?? entry["Người lập biên bản"],
+  );
+  const noteTypes = normalizeDiaryNoteTypes(
+    entry.noteTypes
+      ?? entry.noteType
+      ?? entry.types
+      ?? entry.type
+      ?? entry.category
+      ?? entry.violationTypes
+      ?? entry.violation_types
+      ?? entry.tags
+      ?? entry["Loại ghi chú"],
+  );
+  const attachments = Array.isArray(entry.attachments)
+    ? entry.attachments
+    : Array.isArray(entry.attachedFiles)
+      ? entry.attachedFiles
+      : [];
+
   return {
     id: entry.id || createDiaryId(),
-    weekday: normalizeText(entry.weekday) || getDiaryWeekday(date),
     date,
-    employeeCode: normalizeText(entry.employeeCode),
-    employeeName: normalizeText(entry.employeeName),
-    reason: normalizeText(entry.reason),
-    bienBan: normalizeText(entry.bienBan ?? entry.report),
+    employeeCode: normalizeText(entry.employeeCode ?? entry["Mã N.Viên"]),
+    employeeName: normalizeText(entry.employeeName ?? entry["Tên N.Viên"]),
+    checkIn1: normalizeDiaryTime(entry.checkIn1 ?? entry["Vào 1"]),
+    checkOut1: normalizeDiaryTime(entry.checkOut1 ?? entry["Ra 1"]),
+    checkIn2: normalizeDiaryTime(entry.checkIn2 ?? entry["Vào 2"]),
+    checkOut2: normalizeDiaryTime(entry.checkOut2 ?? entry["Ra 2"]),
+    note,
+    permissionStatus,
+    noteTypes,
+    recordMaker,
+    attachments,
+    attachedFiles: attachments,
     branch: normalizeText(entry.branch),
-    permission: normalizeDiaryPermission(entry.permission),
-    violationTypes,
     creatorCode: normalizeText(entry.creatorCode ?? entry.reporterCode),
-    creatorName: normalizeText(entry.creatorName ?? entry.reporterName ?? entry.createdBy),
     createdAt: normalizeDiaryTimestamp(entry.createdAt ?? entry.createdDate),
     updatedAt: normalizeDiaryTimestamp(entry.updatedAt ?? entry.updatedDate),
+
+    // Compatibility aliases consumed by existing attendance and database code.
+    weekday: normalizeText(entry.weekday) || getDiaryWeekday(date),
+    reason: note,
+    permission: permissionStatus,
+    creatorName: recordMaker,
+    bienBan: normalizeText(entry.bienBan ?? entry.report),
+    violationTypes: noteTypes,
   };
 }

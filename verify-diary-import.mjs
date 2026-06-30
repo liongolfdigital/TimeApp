@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { registerDiaryImportExportRoutes } from "./server/routes/diaryRoutes.js";
 import { createDiaryService } from "./server/services/diaryService.js";
+import { serializeDiaryRow } from "./server/utils/serializers.js";
 import {
   getDiaryIdentity,
   normalizeDiaryViolationTypes,
@@ -33,21 +34,6 @@ function normalizeEmployeeCode(value) {
   return /^\d+$/.test(code) ? code.replace(/^0+(?=\d)/, "") : code;
 }
 
-function serializeDiaryRow(row) {
-  return {
-    ...(row.payload || {}),
-    id: row.id,
-    branch: row.branch,
-    date: row.date,
-    employeeCode: row.employee_code,
-    employeeName: row.employee_name,
-    reason: row.reason,
-    violationTypes: row.violation_types || [],
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
 function createFakeRepository(initialRows = []) {
   const state = {
     rows: initialRows.map((row) => ({ ...row })),
@@ -65,8 +51,18 @@ function createFakeRepository(initialRows = []) {
         .filter((row) => dates.includes(row.date))
         .filter((row) => !branch || normalizeBranch(row.branch) === normalizeBranch(branch));
     },
+    async listAll() {
+      return [...state.rows];
+    },
+    async listByBranch(branch) {
+      return state.rows.filter((row) =>
+        normalizeBranch(row.branch) === normalizeBranch(branch));
+    },
     async findManyByIds(ids) {
       return state.rows.filter(({ id }) => ids.includes(id));
+    },
+    async findById(id) {
+      return state.rows.find((row) => row.id === id) ?? null;
     },
     async listAttachmentsByDiaryIds(ids) {
       return state.attachments.filter(({ diary_entry_id: diaryEntryId }) =>
@@ -90,7 +86,10 @@ function createFakeRepository(initialRows = []) {
           date: record.payload.date,
           employee_code: record.employeeCode,
           employee_name: record.employeeName,
-          reason: record.payload.reason,
+          reason: record.payload.note,
+          permission: record.payload.permissionStatus,
+          creator_code: record.payload.creatorCode,
+          creator_name: record.payload.recordMaker,
           violation_types: record.violationTypes,
           payload: record.payload,
           created_at: record.createdAt,
@@ -101,6 +100,9 @@ function createFakeRepository(initialRows = []) {
         else state.rows.push(row);
       }
       return [];
+    },
+    async upsert(record) {
+      await repository.upsertMany([record]);
     },
     transaction(callback) {
       return callback(repository);
@@ -186,7 +188,10 @@ const { repository, state } = createFakeRepository([{
   date: "2026-06-28",
   employee_code: "E1",
   employee_name: "Nhân viên Q7",
-  reason: "Lý do 0",
+  reason: "Ghi chú cũ",
+  permission: "Có phép",
+  creator_code: "QL01",
+  creator_name: "Quản lý cũ",
   violation_types: ["Đi trễ", "OFF"],
   payload: {
     id: existingId,
@@ -194,7 +199,10 @@ const { repository, state } = createFakeRepository([{
     date: "2026-06-28",
     employeeCode: "E1",
     employeeName: "Nhân viên Q7",
-    reason: "Lý do 0",
+    reason: "Ghi chú cũ",
+    permission: "Có phép",
+    creatorCode: "QL01",
+    creatorName: "Quản lý cũ",
     violationTypes: ["Đi trễ", "OFF"],
   },
   created_at: "2026-06-01T00:00:00.000Z",
@@ -204,12 +212,20 @@ const service = createService(repository);
 const importRows = Array.from({ length: 205 }, (_, index) => ({
   branch: "Q7",
   date: "2026-06-28",
-  employeeCode: "E1",
-  employeeName: "Nhân viên Q7",
-  reason: `Lý do ${index}`,
-  violationTypes: ["Đi trễ", "OFF"],
+  employeeCode: index === 0 ? "E1" : `Q7-${index}`,
+  employeeName: index === 0 ? "Nhân viên Q7" : `Nhân viên ${index}`,
+  checkIn1: "8:00",
+  checkOut1: "17:30",
+  checkIn2: "",
+  checkOut2: "",
+  note: `Ghi chú mới ${index}`,
 }));
-importRows.push({ ...importRows[1], violationTypes: ["OFF", "Đi trễ"] });
+importRows.push({ ...importRows[1], note: "Ghi chú được cập nhật trong cùng file" });
+state.attachments.push({
+  id: "attachment-1",
+  diary_entry_id: existingId,
+  blob_url: "https://example.invalid/attachment-1",
+});
 
 const result = await service.importDiaryRecords(importRows, { role: "Admin", branch: "" });
 assert.deepEqual(result, {
@@ -223,13 +239,18 @@ assert.deepEqual(state.batches, [200, 5]);
 assert.equal(state.lockCount, 1);
 assert.equal(state.rows.length, 205);
 assert.ok(state.rows.some(({ id }) => id === existingId));
+const updatedExisting = serializeDiaryRow(
+  state.rows.find(({ id }) => id === existingId),
+);
+assert.equal(updatedExisting.note, "Ghi chú mới 0");
+assert.equal(updatedExisting.checkIn1, "08:00");
+assert.equal(updatedExisting.checkOut1, "17:30");
+assert.equal(updatedExisting.permissionStatus, "Có phép");
+assert.equal(updatedExisting.recordMaker, "Quản lý cũ");
+assert.deepEqual(updatedExisting.noteTypes, ["Đi trễ", "OFF"]);
+assert.equal(state.attachments.length, 1);
 
 const insertedId = state.rows.find(({ id }) => id !== existingId).id;
-state.attachments.push({
-  id: "attachment-1",
-  diary_entry_id: existingId,
-  blob_url: "https://example.invalid/attachment-1",
-});
 const deleteResult = await service.deleteDiaryRecords(
   [existingId, insertedId],
   { role: "Manager", branch: "Q7" },
@@ -253,6 +274,13 @@ state.rows.push({
   created_at: "2026-06-01T00:00:00.000Z",
   updated_at: "2026-06-01T00:00:00.000Z",
 });
+const managerVisibleRows = await service.listForUser({
+  role: "Manager",
+  branch: "Q7",
+});
+assert.ok(managerVisibleRows.length > 0);
+assert.ok(managerVisibleRows.every(({ branch }) => branch === "Q7"));
+assert.ok(!managerVisibleRows.some(({ id }) => id === olDiaryId));
 await assert.rejects(
   () => service.deleteDiaryRecords([olDiaryId], { role: "Manager", branch: "Q7" }),
   (error) => error.status === 403,
@@ -293,5 +321,26 @@ await assert.rejects(
   () => sizeLimitedService.importDiaryRecords(importRows.slice(0, 3), { role: "Admin", branch: "" }),
   /File Diary quá lớn, vui lòng chia nhỏ file để import\./,
 );
+
+const manualRepositoryState = createFakeRepository();
+const manualService = createService(manualRepositoryState.repository);
+const manuallyCreated = await manualService.save({
+  branch: "Q7",
+  date: "2026-07-20",
+  employeeCode: "E1",
+  employeeName: "Nhân viên Q7",
+  note: "Tạo thủ công",
+  noteTypes: ["Đi trễ", "Về sớm"],
+}, { role: "Admin", branch: "" });
+assert.deepEqual(manuallyCreated.noteTypes, ["Đi trễ", "Về sớm"]);
+const manualExistingRow = manualRepositoryState.state.rows.find(
+  ({ id }) => id === manuallyCreated.id,
+);
+const manuallyUpdated = await manualService.save({
+  ...manuallyCreated,
+  note: "Sửa thủ công",
+  noteTypes: ["Đi trễ", "OFF"],
+}, { role: "Admin", branch: "" }, manualExistingRow);
+assert.deepEqual(manuallyUpdated.noteTypes, ["Đi trễ", "OFF"]);
 
 console.log("Diary batch import/upsert verification passed");

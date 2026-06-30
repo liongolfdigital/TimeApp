@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   createDiaryId,
-  DIARY_VIOLATION_OPTIONS,
+  DIARY_NOTE_TYPE_OPTIONS,
   EMPTY_DIARY_ENTRY,
-  getDiaryWeekday,
-  normalizeDiaryViolationTypes,
+  normalizeDiaryNoteTypes,
   sanitizeDiaryEntry,
 } from "../diary/diaryModel";
 import {
@@ -52,36 +51,32 @@ export default function DiaryForm({
     const nextFormData = entry
       ? {
           ...EMPTY_DIARY_ENTRY,
-          ...entry,
+          ...sanitizeDiaryEntry(entry),
           ...(fixedBranch ? { branch: fixedBranch } : {}),
         }
       : {
           ...EMPTY_DIARY_ENTRY,
           branch: fixedBranch,
           creatorCode: currentIdentity.code,
+          recordMaker: currentIdentity.name,
           creatorName: currentIdentity.name,
         };
-    setFormData({
-      ...nextFormData,
-      violationTypes: normalizeDiaryViolationTypes(nextFormData.violationTypes),
-    });
+    setFormData(nextFormData);
   }, [currentIdentity.code, currentIdentity.name, entry, fixedBranch]);
 
   const changeField = (key, value) => {
     setFormData((current) => ({
       ...current,
       [key]: value,
-      ...(key === "date" ? { weekday: getDiaryWeekday(value) } : {}),
     }));
   };
 
-  const toggleViolationType = (type) => {
+  const toggleNoteType = (type) => {
     setFormData((current) => {
-      const selected = normalizeDiaryViolationTypes(current.violationTypes);
-      const exists = selected.includes(type);
+      const selected = normalizeDiaryNoteTypes(current.noteTypes);
       return {
         ...current,
-        violationTypes: exists
+        noteTypes: selected.includes(type)
           ? selected.filter((item) => item !== type)
           : [...selected, type],
       };
@@ -111,7 +106,7 @@ export default function DiaryForm({
       findDiaryEmployeeByCode(employees, value);
     setFormData((current) => ({
       ...current,
-      creatorName: employee?.employeeName ?? value,
+      recordMaker: employee?.employeeName ?? value,
       creatorCode: employee?.employeeCode ?? "",
     }));
   };
@@ -126,8 +121,8 @@ export default function DiaryForm({
       attachmentDraft.setError("Cần nhập ít nhất Mã N.Viên hoặc Tên N.Viên.");
       return;
     }
-    if (!formData.reason.trim()) {
-      attachmentDraft.setError("Vui lòng nhập lý do.");
+    if (!formData.note.trim()) {
+      attachmentDraft.setError("Vui lòng nhập ghi chú.");
       return;
     }
 
@@ -169,9 +164,7 @@ export default function DiaryForm({
           },
         ]
       : employees;
-  const selectedViolationTypes =
-    normalizeDiaryViolationTypes(formData.violationTypes);
-
+  const selectedNoteTypes = normalizeDiaryNoteTypes(formData.noteTypes);
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={isSaving ? undefined : onCancel}>
       <div className="employee-modal diary-modal" role="dialog" aria-modal="true" aria-labelledby="diary-form-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -185,7 +178,6 @@ export default function DiaryForm({
         <form onSubmit={handleSubmit}>
           <div className="diary-form-grid">
             <label className="form-field"><span>Ngày</span><input type="date" value={formData.date} onChange={(event) => changeField("date", event.target.value)} /></label>
-            <label className="form-field"><span>Thứ</span><input value={formData.weekday} onChange={(event) => changeField("weekday", event.target.value)} placeholder="T2, T3..." /></label>
             <label className="form-field"><span>Mã N.Viên</span><input list="diary-employee-code-options" value={formData.employeeCode} onChange={(event) => changeEmployeeCode(event.target.value)} placeholder="Nhập mã để tìm kiếm" autoComplete="off" /><datalist id="diary-employee-code-options">{employees.map((employee) => <option key={employee.id} value={employee.employeeCode}>{employee.employeeName}</option>)}</datalist></label>
             <label className="form-field"><span>Tên N.Viên</span><input list="diary-employee-name-options" value={formData.employeeName} onChange={(event) => changeEmployeeName(event.target.value)} placeholder="Nhập tên để tìm kiếm" autoComplete="off" /><datalist id="diary-employee-name-options">{employees.map((employee) => <option key={employee.id} value={employee.employeeName}>{employee.employeeCode}</option>)}</datalist></label>
             {matchedEmployee && (matchedEmployee.branch || matchedEmployee.registeredShift) && (
@@ -194,22 +186,33 @@ export default function DiaryForm({
                 <div><span>Giờ ĐK</span><strong>{matchedEmployee.registeredShift || "—"}</strong></div>
               </div>
             )}
-            <label className="form-field"><span>Có / Không phép</span><select value={formData.permission} onChange={(event) => changeField("permission", event.target.value)}><option value="">Chưa xác định</option><option value="Có phép">Có phép</option><option value="Không phép">Không phép</option></select></label>
-            <section className="form-field form-field-wide diary-violation-field">
-              <span>Loại ghi chú</span>
+            <label className="form-field"><span>Vào 1</span><input type="time" value={formData.checkIn1} onChange={(event) => changeField("checkIn1", event.target.value)} /></label>
+            <label className="form-field"><span>Ra 1</span><input type="time" value={formData.checkOut1} onChange={(event) => changeField("checkOut1", event.target.value)} /></label>
+            <label className="form-field"><span>Vào 2</span><input type="time" value={formData.checkIn2} onChange={(event) => changeField("checkIn2", event.target.value)} /></label>
+            <label className="form-field"><span>Ra 2</span><input type="time" value={formData.checkOut2} onChange={(event) => changeField("checkOut2", event.target.value)} /></label>
+            <label className="form-field form-field-wide"><span>Ghi chú</span><textarea value={formData.note} onChange={(event) => changeField("note", event.target.value)} placeholder="Nhập ghi chú chấm công" /></label>
+            <label className="form-field"><span>Có/Không phép</span><select value={formData.permissionStatus} onChange={(event) => changeField("permissionStatus", event.target.value)}><option value="">Để trống / chưa xác định</option><option value="Có phép">Có phép</option><option value="Không phép">Không phép</option></select></label>
+            <fieldset className="form-field form-field-wide diary-violation-field">
+              <legend>Loại ghi chú</legend>
               <div className="diary-checkbox-grid">
-                {DIARY_VIOLATION_OPTIONS.map((type) => {
-                  const checked = selectedViolationTypes.includes(type);
+                {DIARY_NOTE_TYPE_OPTIONS.map((type) => {
+                  const checked = selectedNoteTypes.includes(type);
                   return (
                     <label className={`diary-checkbox-card ${checked ? "selected" : ""}`} key={type}>
-                      <input type="checkbox" checked={checked} onChange={() => toggleViolationType(type)} />
+                      <input type="checkbox" checked={checked} onChange={() => toggleNoteType(type)} />
                       <span>{type}</span>
                     </label>
                   );
                 })}
               </div>
-            </section>
-            <label className="form-field form-field-wide"><span>Lý do</span><textarea value={formData.reason} onChange={(event) => changeField("reason", event.target.value)} placeholder="Nhập lý do phát sinh" /></label>
+            </fieldset>
+
+            <label className="form-field form-field-wide creator-field">
+              <span>Người lập biên bản</span>
+              <input list="diary-creator-options" value={formData.recordMaker} onChange={(event) => changeCreator(event.target.value)} placeholder="Chọn hoặc nhập người lập" autoComplete="off" />
+              <datalist id="diary-creator-options">{creatorOptions.map((employee) => <option key={employee.id || `${employee.employeeCode}-${employee.employeeName}`} value={employee.employeeName}>{employee.employeeCode}</option>)}</datalist>
+              <small>{formData.creatorCode ? `Mã người lập: ${formData.creatorCode}` : "Có thể chọn từ danh sách nhân viên hoặc nhập tài khoản hệ thống."}</small>
+            </label>
 
             <DiaryAttachmentField
               canRemoveAttachment={canRemoveAttachment}
@@ -217,13 +220,6 @@ export default function DiaryForm({
               isSaving={isSaving}
               maxFileSizeMb={maxFileSizeMb}
             />
-
-            <label className="form-field form-field-wide creator-field">
-              <span>Người lập biên bản</span>
-              <input list="diary-creator-options" value={formData.creatorName} onChange={(event) => changeCreator(event.target.value)} placeholder="Chọn hoặc nhập người lập" autoComplete="off" />
-              <datalist id="diary-creator-options">{creatorOptions.map((employee) => <option key={employee.id || `${employee.employeeCode}-${employee.employeeName}`} value={employee.employeeName}>{employee.employeeCode}</option>)}</datalist>
-              <small>{formData.creatorCode ? `Mã người lập: ${formData.creatorCode}` : "Có thể chọn từ danh sách nhân viên hoặc nhập tài khoản hệ thống."}</small>
-            </label>
           </div>
           {attachmentDraft.error && <p className="form-error">{attachmentDraft.error}</p>}
           <div className="modal-actions">

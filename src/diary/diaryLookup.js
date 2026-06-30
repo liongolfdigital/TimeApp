@@ -65,8 +65,14 @@ export function findDiaryForViolation(lookup, {
     : name
       ? lookup.byNameAndDate.get(`${normalizedDate}|${name}`)
       : null;
-  const matched = (candidates ?? [])
-    .filter((entry) => normalizeDiaryViolationTypes(entry.violationTypes).includes(normalizedType))
+  const typedMatches = (candidates ?? []).filter((entry) =>
+    normalizeDiaryViolationTypes(entry.noteTypes ?? entry.violationTypes).includes(normalizedType));
+  // Excel có thể không có "Loại ghi chú"; dùng dòng không phân loại làm
+  // fallback chung, còn dòng đã chọn loại vẫn được ưu tiên.
+  const genericMatches = (candidates ?? []).filter((entry) =>
+    !normalizeDiaryViolationTypes(entry.noteTypes ?? entry.violationTypes).length
+    && Boolean(normalizeText(entry.note ?? entry.reason)));
+  const matched = (typedMatches.length ? typedMatches : genericMatches)
     .sort((first, second) => diarySortTimestamp(second) - diarySortTimestamp(first));
   if (!matched.length) return null;
   return { entry: matched[0], matchType: code ? "employeeCode" : "employeeName" };

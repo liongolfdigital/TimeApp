@@ -140,6 +140,9 @@
     min-width: 0;
     min-height: 46px;
   }
+  .diary-note-type-filter { width: 100%; min-width: 0; }
+  .diary-note-type-filter > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .diary-note-type-filter label { min-width: 0; }
   .employee-table-meta { flex-direction: column; gap: 4px; }
 
   .table-shell,
@@ -161,13 +164,14 @@
   .employee-table-selectable td:nth-child(4) { min-width: 120px; }
   .employee-table-selectable th:nth-child(5),
   .employee-table-selectable td:nth-child(5) { min-width: 168px; }
-  .diary-table .diary-cell-reason,
+  .diary-table .diary-cell-note,
+  .diary-table .diary-cell-noteTypes,
   .diary-table .diary-cell-attachments,
-  .diary-table .diary-cell-creatorName {
+  .diary-table .diary-cell-recordMaker {
     white-space: normal;
     overflow-wrap: anywhere;
   }
-  .diary-table .diary-cell-reason { min-width: 220px; }
+  .diary-table .diary-cell-note { min-width: 220px; }
   .diary-table .diary-cell-attachments { min-width: 210px; }
   .row-actions button,
   .attachment-actions button,
@@ -324,6 +328,7 @@
 
   .diary-checkbox-grid { grid-template-columns: 1fr 1fr; }
   .diary-checkbox-card { padding: 9px; }
+  .diary-note-type-filter > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .diary-detail-grid { grid-template-columns: 1fr; }
   .diary-detail-reason { grid-column: span 1; }
   .attachment-heading { gap: 12px; }

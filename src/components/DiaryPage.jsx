@@ -49,7 +49,7 @@ export default function DiaryPage({
         <div>
           <div className="eyebrow">Dữ liệu đối chiếu chấm công</div>
           <h1>Diary <span>/ Ghi chú nhân viên</span></h1>
-          <p>Lưu lý do phát sinh và hồ sơ chứng minh trên server để đối chiếu tự động khi xử lý chấm công.</p>
+          <p>Quản lý các mốc vào/ra, ghi chú và hồ sơ nội bộ để đối chiếu tự động khi xử lý chấm công.</p>
         </div>
         <div className="employee-stat">
           <span className="employee-stat-icon"><BookIcon size={24} /></span>
@@ -76,15 +76,15 @@ export default function DiaryPage({
             employeeFilter={view.employeeFilter}
             employeeOptions={view.employeeOptions}
             monthFilter={view.monthFilter}
+            noteTypeFilters={view.noteTypeFilters}
             permissionFilter={view.permissionFilter}
             search={view.search}
-            violationFilter={view.violationFilter}
             onDateChange={view.setDateFilter}
             onEmployeeChange={view.setEmployeeFilter}
             onMonthChange={view.setMonthFilter}
+            onNoteTypeToggle={view.toggleNoteTypeFilter}
             onPermissionChange={view.setPermissionFilter}
             onSearchChange={view.setSearch}
-            onViolationChange={view.setViolationFilter}
           />
         </div>
 

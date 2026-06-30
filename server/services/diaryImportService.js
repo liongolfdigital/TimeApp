@@ -62,7 +62,7 @@ export function createDiaryImportService({
       employeeName: entry?.employeeName,
     }));
     const employee = findIndexedEmployee(entry, employeeIndex);
-    const employeeBranch = normalizeBranch(detectRecordBranch(employee));
+    const employeeBranch = normalizeBranch(detectRecordBranch(employee || {}));
 
     if (managerImport) {
       for (const branch of [explicitBranch, identityBranch, employeeBranch]) {
@@ -146,13 +146,28 @@ export function createDiaryImportService({
         const id = existingRow?.id || createId();
         const createdAt =
           existingRow?.created_at || entry.createdAt || timestamp;
+        const permissionStatus =
+          entry.permissionStatus || existingEntry?.permissionStatus || "";
+        const recordMaker =
+          entry.recordMaker || existingEntry?.recordMaker || "";
+        const noteTypes = entry.noteTypes?.length
+          ? entry.noteTypes
+          : existingEntry?.noteTypes ?? existingEntry?.violationTypes ?? [];
         const payload = removeLegacyReportText({
           ...existingEntry,
           ...entry,
           id,
           branch: entry.branch,
+          permissionStatus,
+          permission: permissionStatus,
+          recordMaker,
+          creatorName: recordMaker,
           creatorCode: entry.creatorCode || existingEntry?.creatorCode || "",
-          creatorName: entry.creatorName || existingEntry?.creatorName || "",
+          noteTypes,
+          violationTypes: noteTypes,
+          bienBan: entry.bienBan || existingEntry?.bienBan || "",
+          attachments: existingEntry?.attachments,
+          attachedFiles: existingEntry?.attachedFiles,
           createdAt,
           updatedAt: timestamp,
         });
@@ -163,7 +178,7 @@ export function createDiaryImportService({
           branch: entry.branch,
           employeeCode: normalizeText(entry.employeeCode),
           employeeName: normalizeText(entry.employeeName),
-          violationTypes: normalizeDiaryViolationTypes(entry.violationTypes),
+          violationTypes: normalizeDiaryViolationTypes(noteTypes),
           payload,
           createdAt,
           updatedAt: timestamp,

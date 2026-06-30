@@ -1,4 +1,8 @@
-import { normalizeDiaryViolationTypes } from "../../src/diary/diaryModel.js";
+import {
+  normalizeDiaryPermission,
+  normalizeDiaryTime,
+  normalizeDiaryViolationTypes,
+} from "../../src/diary/diaryModel.js";
 import { normalizeText, normalizeUsername } from "./textUtils.js";
 import { toDateText, toIso } from "./dateUtils.js";
 
@@ -57,9 +61,22 @@ export function serializeEmployeeRow(row) {
 
 export function serializeDiaryRow(row) {
   const payload = parsePayload(row);
-  const violationTypes = normalizeDiaryViolationTypes(
-    payload.violationTypes ?? payload.violation_types ?? row.violation_types,
+  const noteTypes = normalizeDiaryViolationTypes(
+    payload.noteTypes
+      ?? payload.noteType
+      ?? payload.types
+      ?? payload.type
+      ?? payload.category
+      ?? payload.violationTypes
+      ?? payload.violation_types
+      ?? row.violation_types,
   );
+  const note = payload.note ?? payload.reason ?? row.reason ?? "";
+  const permissionStatus = normalizeDiaryPermission(
+    payload.permissionStatus ?? payload.permission ?? row.permission,
+  );
+  const recordMaker =
+    payload.recordMaker ?? payload.creatorName ?? row.creator_name ?? "";
   return {
     ...payload,
     id: row.id,
@@ -68,11 +85,19 @@ export function serializeDiaryRow(row) {
     date: payload.date || toDateText(row.date),
     employeeCode: payload.employeeCode ?? row.employee_code ?? "",
     employeeName: payload.employeeName ?? row.employee_name ?? "",
-    reason: payload.reason ?? row.reason ?? "",
-    permission: payload.permission ?? row.permission ?? "",
-    violationTypes,
+    checkIn1: normalizeDiaryTime(payload.checkIn1),
+    checkOut1: normalizeDiaryTime(payload.checkOut1),
+    checkIn2: normalizeDiaryTime(payload.checkIn2),
+    checkOut2: normalizeDiaryTime(payload.checkOut2),
+    note,
+    permissionStatus,
+    noteTypes,
+    recordMaker,
+    reason: note,
+    permission: permissionStatus,
+    violationTypes: noteTypes,
     creatorCode: payload.creatorCode ?? row.creator_code ?? "",
-    creatorName: payload.creatorName ?? row.creator_name ?? "",
+    creatorName: recordMaker,
     createdAt: payload.createdAt || toIso(row.created_at),
     updatedAt: payload.updatedAt || toIso(row.updated_at),
   };

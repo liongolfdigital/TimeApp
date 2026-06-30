@@ -1,4 +1,4 @@
-import { DIARY_VIOLATION_OPTIONS } from "../../diary/diaryModel";
+import { DIARY_NOTE_TYPE_OPTIONS } from "../../diary/diaryModel";
 import { FilterIcon, SearchIcon } from "../Icons";
 
 export default function DiaryFilters({
@@ -6,20 +6,20 @@ export default function DiaryFilters({
   employeeFilter,
   employeeOptions,
   monthFilter,
+  noteTypeFilters,
   permissionFilter,
   search,
-  violationFilter,
   onDateChange,
   onEmployeeChange,
   onMonthChange,
+  onNoteTypeToggle,
   onPermissionChange,
   onSearchChange,
-  onViolationChange,
 }) {
   return (
     <div className="employee-filters diary-filters">
       <label className="search-field"><SearchIcon size={18} />
-        <input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Tìm mã, tên, ngày, lý do..." />
+        <input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Tìm mã, tên, ngày, ghi chú..." />
       </label>
       <label className="select-field date-field"><FilterIcon size={17} />
         <input type="date" value={dateFilter} onChange={(event) => onDateChange(event.target.value)} title="Lọc theo ngày" />
@@ -40,12 +40,21 @@ export default function DiaryFilters({
           <option value="Không phép">Không phép</option>
         </select>
       </label>
-      <label className="select-field"><FilterIcon size={17} />
-        <select value={violationFilter} onChange={(event) => onViolationChange(event.target.value)}>
-          <option value="">Tất cả loại ghi chú</option>
-          {DIARY_VIOLATION_OPTIONS.map((type) => <option key={type} value={type}>{type}</option>)}
-        </select>
-      </label>
+      <fieldset className="diary-note-type-filter">
+        <legend><FilterIcon size={15} /> Loại ghi chú</legend>
+        <div>
+          {DIARY_NOTE_TYPE_OPTIONS.map((type) => (
+            <label className={noteTypeFilters.includes(type) ? "selected" : ""} key={type}>
+              <input
+                type="checkbox"
+                checked={noteTypeFilters.includes(type)}
+                onChange={() => onNoteTypeToggle(type)}
+              />
+              <span>{type}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
     </div>
   );
 }

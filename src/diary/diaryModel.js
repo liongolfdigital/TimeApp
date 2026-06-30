@@ -7,6 +7,9 @@ export {
   DIARY_EXPORT_FIELDS,
   DIARY_EXPORT_FILE_NAME,
   DIARY_FIELDS,
+  DIARY_IMPORT_FIELDS,
+  DIARY_NOTE_TYPE_OPTIONS,
+  DIARY_REQUIRED_IMPORT_KEYS,
   DIARY_SHEET_NAME,
   DIARY_STORAGE_KEY,
   DIARY_VIOLATION_OPTIONS,
@@ -25,9 +28,13 @@ export {
 
 export {
   createDiaryId,
+  formatDiaryNoteTypes,
   formatDiaryViolationTypes,
   normalizeDiaryEmployeeCode,
+  normalizeDiaryNoteType,
+  normalizeDiaryNoteTypes,
   normalizeDiaryPermission,
+  normalizeDiaryTime,
   normalizeDiaryViolationType,
   normalizeDiaryViolationTypes,
   sanitizeDiaryEntry,

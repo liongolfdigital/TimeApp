@@ -51,7 +51,7 @@ export function createDiaryService({
     }
     const requestedBranch = detectRecordBranch(input);
     const employeeBranch = detectRecordBranch(
-      await findEmployeeForDiary(input),
+      await findEmployeeForDiary(input) || {},
     );
     const resolvedBranch = employeeBranch || requestedBranch;
     if (user.role === "Manager") {
@@ -73,16 +73,18 @@ export function createDiaryService({
     const createdAt =
       existingRow?.created_at || normalizeText(input.createdAt) || now;
     const updatedAt = normalizeText(input.updatedAt) || now;
-    const violationTypes = normalizeDiaryViolationTypes(
-      input.violationTypes ?? input.violation_types ?? input.tags,
-    );
-    const payload = removeLegacyReportText({
+    const sanitized = sanitizeDiaryEntry({
       ...input,
       id,
       branch,
-      violationTypes,
       createdAt,
       updatedAt,
+    });
+    const noteTypes = normalizeDiaryViolationTypes(sanitized.noteTypes);
+    const payload = removeLegacyReportText({
+      ...sanitized,
+      attachments: undefined,
+      attachedFiles: undefined,
     });
     if (!normalizeText(payload.date)) {
       const error = new Error("Vui long nhap ngay Diary.");
@@ -94,7 +96,7 @@ export function createDiaryService({
       branch,
       employeeCode: normalizeText(payload.employeeCode),
       employeeName: normalizeText(payload.employeeName),
-      violationTypes,
+      violationTypes: noteTypes,
       payload,
       createdAt,
       updatedAt,

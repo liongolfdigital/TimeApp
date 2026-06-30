@@ -41,7 +41,7 @@ export default function DiaryAttachmentField({
 }) {
   return (
     <section className="form-field form-field-wide diary-form-files">
-      <span>File biên bản</span>
+      <span>File đính kèm</span>
       <input
         ref={draft.fileInputRef}
         className="hidden-file-input"
@@ -60,7 +60,7 @@ export default function DiaryAttachmentField({
       >
         <span className="form-file-drop-icon"><UploadIcon size={23} /></span>
         <div className="form-file-drop-copy">
-          <strong>{draft.isDragActive ? "Thả file để thêm biên bản" : "Kéo thả file vào đây, paste ảnh hoặc bấm Chọn file"}</strong>
+          <strong>{draft.isDragActive ? "Thả file để thêm đính kèm" : "Kéo thả file vào đây, paste ảnh hoặc bấm Chọn file"}</strong>
           <small>Hỗ trợ JPG, JPEG, PNG, WEBP, PDF, DOC, DOCX, XLS, XLSX; tối đa {maxFileSizeMb}MB/file.</small>
         </div>
         <button className="button button-secondary" type="button" disabled={isSaving} onClick={() => draft.fileInputRef.current?.click()}>
@@ -96,7 +96,7 @@ export default function DiaryAttachmentField({
         )) : (
           <div className="attachment-empty compact">
             <FileIcon size={27} />
-            <strong>Chưa chọn file biên bản</strong>
+            <strong>Chưa chọn file đính kèm</strong>
             <span>Có thể lưu Diary mà không cần file.</span>
           </div>
         )}

@@ -1,6 +1,10 @@
 import { useRef, useState } from "react";
 import { CloseIcon, DownloadIcon, EditIcon, EyeIcon, FileIcon, ReplaceIcon, TrashIcon, UploadIcon } from "./Icons";
-import { formatDiaryDate, formatDiaryDateTime, normalizeDiaryViolationTypes } from "../diary/diaryModel";
+import {
+  formatDiaryDate,
+  formatDiaryDateTime,
+  normalizeDiaryNoteTypes,
+} from "../diary/diaryModel";
 import { ATTACHMENT_ACCEPT, deleteDiaryAttachment, getAttachmentContentUrl, isPreviewableAttachment, uploadDiaryAttachment, validateAttachmentFile } from "../diary/attachmentStorage";
 
 const UPLOADER_STORAGE_KEY = "timekeeping.attachmentUploader.v1";
@@ -22,13 +26,16 @@ function formatUploadedDate(value) {
   }).format(date);
 }
 
-// Render các loại ghi chú Diary thành tag, với style riêng cho OFF.
-function renderViolationTags(value, emptyText = "Không có") {
-  const types = normalizeDiaryViolationTypes(value);
-  if (!types.length) return <strong>{emptyText}</strong>;
+function renderNoteTypes(value) {
+  const noteTypes = normalizeDiaryNoteTypes(value);
+  if (!noteTypes.length) return <strong>—</strong>;
   return (
     <div className="diary-tag-list">
-      {types.map((type) => <span className={`diary-tag ${type === "OFF" ? "diary-tag-off" : ""}`} key={type}>{type}</span>)}
+      {noteTypes.map((type) => (
+        <span className={`diary-tag ${type === "OFF" ? "diary-tag-off" : ""}`} key={type}>
+          {type}
+        </span>
+      ))}
     </div>
   );
 }
@@ -49,7 +56,7 @@ export default function DiaryDetails({
   const fileInputRef = useRef(null);
   const replaceIdRef = useRef("");
   const [uploadedBy, setUploadedBy] = useState(
-    () => currentUser?.fullName || entry.creatorName || localStorage.getItem(UPLOADER_STORAGE_KEY) || "",
+    () => currentUser?.fullName || entry.recordMaker || entry.creatorName || localStorage.getItem(UPLOADER_STORAGE_KEY) || "",
   );
   const [previewAttachment, setPreviewAttachment] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -140,19 +147,23 @@ export default function DiaryDetails({
         <div className="diary-detail-grid">
           <div><span>Mã N.Viên</span><strong>{entry.employeeCode || "—"}</strong></div>
           <div><span>Tên N.Viên</span><strong>{entry.employeeName || "—"}</strong></div>
-          <div><span>Chi nhánh</span><strong>{entry.branch || "—"}</strong></div>
           <div><span>Ngày</span><strong>{formatDiaryDate(entry.date)}</strong></div>
-          <div><span>Trạng thái</span><strong className={entry.permission === "Có phép" ? "status-permitted" : "status-not-permitted"}>{entry.permission || "Chưa xác định"}</strong></div>
-          <div><span>Loại ghi chú</span>{renderViolationTags(entry.violationTypes)}</div>
-          <div><span>Người lập biên bản</span><strong>{entry.creatorName || "—"}</strong>{entry.creatorCode && <small>{entry.creatorCode}</small>}</div>
+          <div><span>Có/Không phép</span><strong className={entry.permissionStatus === "Có phép" ? "status-permitted" : "status-not-permitted"}>{entry.permissionStatus || "Chưa xác định"}</strong></div>
+          <div><span>Loại ghi chú</span>{renderNoteTypes(entry.noteTypes)}</div>
+          <div><span>Vào 1</span><strong>{entry.checkIn1 || "—"}</strong></div>
+          <div><span>Ra 1</span><strong>{entry.checkOut1 || "—"}</strong></div>
+          <div><span>Vào 2</span><strong>{entry.checkIn2 || "—"}</strong></div>
+          <div><span>Ra 2</span><strong>{entry.checkOut2 || "—"}</strong></div>
+          <div><span>Người lập biên bản</span><strong>{entry.recordMaker || "—"}</strong>{entry.creatorCode && <small>{entry.creatorCode}</small>}</div>
+          <div><span>Chi nhánh</span><strong>{entry.branch || "—"}</strong></div>
           <div><span>Ngày tạo</span><strong>{formatDiaryDateTime(entry.createdAt)}</strong></div>
           <div><span>Ngày cập nhật</span><strong>{formatDiaryDateTime(entry.updatedAt)}</strong></div>
-          <div className="diary-detail-reason"><span>Lý do</span><strong>{entry.reason}</strong></div>
+          <div className="diary-detail-reason"><span>Ghi chú</span><strong>{entry.note || "—"}</strong></div>
         </div>
 
         <section className="attachment-section">
           <div className="attachment-heading">
-            <div><h3>File biên bản</h3><p>{attachments.length ? `${attachments.length} file đã lưu trên server` : "Chưa bổ sung hồ sơ"}</p></div>
+            <div><h3>File đính kèm</h3><p>{attachments.length ? `${attachments.length} file đã lưu trên server` : "Chưa bổ sung file"}</p></div>
             <button className="button button-secondary" type="button" disabled={isUploading} onClick={() => chooseFile()}><UploadIcon size={17} />{isUploading ? "Đang tải..." : "Upload file"}</button>
           </div>
 

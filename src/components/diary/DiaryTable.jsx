@@ -1,9 +1,7 @@
 import {
   DIARY_FIELDS,
   formatDiaryDate,
-  formatDiaryViolationTypes,
-  hasDiaryAttachments,
-  normalizeDiaryViolationTypes,
+  formatDiaryNoteTypes,
 } from "../../diary/diaryModel";
 import {
   BookIcon,
@@ -12,55 +10,30 @@ import {
   TrashIcon,
 } from "../Icons";
 
-function formatAttachmentDate(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("vi-VN");
-}
-
-function ViolationTags({ value, emptyText = "—" }) {
-  const types = normalizeDiaryViolationTypes(value);
-  if (!types.length) return <span className="empty-cell">{emptyText}</span>;
-  return (
-    <div className="diary-tag-list">
-      {types.map((type) => (
-        <span className={`diary-tag ${type === "OFF" ? "diary-tag-off" : ""}`} key={type}>
-          {type}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 function renderCell(entry, field) {
   if (field.type === "date") return formatDiaryDate(entry[field.key]);
-  if (field.type === "attachmentStatus") {
-    return (
-      <span className={`attachment-status ${hasDiaryAttachments(entry) ? "has-files" : "no-files"}`}>
-        {hasDiaryAttachments(entry) ? "Có" : "Không"}
-      </span>
-    );
-  }
-  if (field.type === "violationTypes") return <ViolationTags value={entry[field.key]} />;
   if (field.type === "attachments") {
-    const firstAttachment = entry.attachments[0];
-    return firstAttachment ? (
-      <div className="attachment-cell">
-        <strong>{firstAttachment.fileName}</strong>
-        <span>
-          {formatAttachmentDate(firstAttachment.uploadedDate)} · {firstAttachment.uploadedBy}
-          {entry.attachments.length > 1 ? ` · +${entry.attachments.length - 1} file` : ""}
-        </span>
-      </div>
-    ) : <span className="empty-cell">Chưa có hồ sơ</span>;
+    const count = entry.attachments?.length ?? 0;
+    return count ? (
+      <span className="attachment-status has-files">{count} file</span>
+    ) : <span className="empty-cell">Chưa có file</span>;
+  }
+  if (field.type === "noteTypes") {
+    return formatDiaryNoteTypes(entry.noteTypes) || <span className="empty-cell">—</span>;
+  }
+  if (field.key === "permissionStatus") {
+    return entry.permissionStatus ? (
+      <span className={`attachment-status ${entry.permissionStatus === "Có phép" ? "has-files" : "no-files"}`}>
+        {entry.permissionStatus}
+      </span>
+    ) : <span className="empty-cell">Chưa xác định</span>;
   }
   return entry[field.key] || <span className="empty-cell">—</span>;
 }
 
 function getCellTitle(entry, field) {
   if (field.type === "attachments") return undefined;
-  if (field.type === "violationTypes") {
-    return formatDiaryViolationTypes(entry[field.key]);
-  }
+  if (field.type === "noteTypes") return formatDiaryNoteTypes(entry.noteTypes);
   return String(entry[field.key] ?? "");
 }
 
@@ -137,7 +110,7 @@ export default function DiaryTable({
               <td className="employee-empty" colSpan={DIARY_FIELDS.length + (allowDeleteEntry ? 3 : 2)}>
                 <BookIcon size={30} />
                 <strong>{visibleEntries.length ? "Không có kết quả phù hợp" : "Chưa có dữ liệu Diary"}</strong>
-                <span>{allowImportExport ? "Import Dairy.xlsx hoặc thêm ghi chú mới." : "Bạn chỉ thấy Diary thuộc chi nhánh được phân quyền."}</span>
+                <span>{allowImportExport ? "Import Diary.xlsx hoặc thêm dòng mới." : "Bạn chỉ thấy Diary thuộc chi nhánh được phân quyền."}</span>
               </td>
             </tr>
           )}

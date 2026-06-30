@@ -6,6 +6,7 @@ import {
   importDiaryFromExcel,
 } from "../../diary/diaryExcel";
 import {
+  getDiaryIdentity,
   mergeDiaryEntries,
   sanitizeDiaryEntry,
 } from "../../diary/diaryModel";
@@ -37,12 +38,19 @@ export async function importDiaryFile({
         message: error.message,
       },
     );
-    const currentScope = isManager(currentUser) ? visibleEntries : entries;
-    savedEntries = mergeDiaryEntries(currentScope, scopedImported);
+    const uniqueImported = new Map(
+      scopedImported.map((entry) => [getDiaryIdentity(entry), entry]),
+    );
+    const existingIdentities = new Set(entries.map(getDiaryIdentity));
+    const updatedRows = [...uniqueImported.keys()]
+      .filter((identity) => existingIdentities.has(identity)).length;
+    savedEntries = mergeDiaryEntries(entries, [...uniqueImported.values()]);
     importResult = {
       receivedRows: imported.length,
       sanitizedRows: scopedImported.length,
-      upsertedRows: scopedImported.length,
+      upsertedRows: uniqueImported.size,
+      insertedRows: uniqueImported.size - updatedRows,
+      updatedRows,
     };
   }
   return { importResult, savedEntries };

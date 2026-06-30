@@ -103,7 +103,7 @@ export function useDiaryActions({
     ]);
     setIsFormOpen(false);
     setEditingEntry(undefined);
-    setSelectedEntryId(editingEntry ? result.savedEntry.id : "");
+    setSelectedEntryId("");
     setMessage({
       type: "success",
       text: `Dữ liệu Diary đã được cập nhật${result.uploadedAttachments.length ? ` cùng ${result.uploadedAttachments.length} file biên bản` : ""}${result.usingLocalDiaryApi && newFiles.length ? ". API file đính kèm chưa sẵn sàng, vui lòng upload lại sau khi server được khởi động đúng." : ""}.`,
@@ -238,7 +238,7 @@ export function useDiaryActions({
       onEntriesChange(savedEntries);
       setMessage({
         type: "success",
-        text: `Đã import/upsert ${importResult.upsertedRows} dòng Diary. File đính kèm cần được upload riêng trên trang Diary.`,
+        text: `Đã import ${importResult.insertedRows ?? importResult.upsertedRows} dòng mới và cập nhật ${importResult.updatedRows ?? 0} dòng Diary. File đính kèm cũ được giữ nguyên.`,
       });
       onLogAction?.("diary.import.ui", {
         targetType: "diary",

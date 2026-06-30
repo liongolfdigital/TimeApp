@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   filterDiaryEntriesForUser,
   filterEmployeesForUser,
@@ -6,9 +6,9 @@ import {
 } from "../auth/authorization";
 import {
   formatDiaryDate,
-  formatDiaryViolationTypes,
+  formatDiaryNoteTypes,
   normalizeDiaryDate,
-  normalizeDiaryViolationTypes,
+  normalizeDiaryNoteTypes,
   sortDiaryEntries,
 } from "../diary/diaryModel";
 import { normalizeLookup } from "../employees/employeeModel";
@@ -25,7 +25,14 @@ export function useDiaryView({
   const [monthFilter, setMonthFilter] = useState("");
   const [employeeFilter, setEmployeeFilter] = useState("");
   const [permissionFilter, setPermissionFilter] = useState("");
-  const [violationFilter, setViolationFilter] = useState("");
+  const [noteTypeFilters, setNoteTypeFilters] = useState([]);
+
+  const toggleNoteTypeFilter = useCallback((type) => {
+    setNoteTypeFilters((current) =>
+      current.includes(type)
+        ? current.filter((item) => item !== type)
+        : [...current, type]);
+  }, []);
 
   const visibleEmployees = useMemo(
     () => filterEmployeesForUser(employees, currentUser),
@@ -69,32 +76,33 @@ export function useDiaryView({
       const employeeKey = entry.employeeCode
         ? `code:${normalizeLookup(entry.employeeCode)}`
         : `name:${normalizeLookup(entry.employeeName)}`;
-      const violationTypes = normalizeDiaryViolationTypes(entry.violationTypes);
+      const noteTypes = normalizeDiaryNoteTypes(entry.noteTypes);
       const matchesSearch = !term || [
         entry.employeeCode,
         entry.employeeName,
         entry.date,
         formatDiaryDate(entry.date),
-        entry.reason,
-        entry.bienBan,
+        entry.note,
+        entry.permissionStatus,
+        formatDiaryNoteTypes(noteTypes),
+        entry.recordMaker,
         entry.branch,
-        formatDiaryViolationTypes(violationTypes),
       ].some((value) => normalizeLookup(value).includes(term));
       return matchesSearch &&
         (!dateFilter || normalizeDiaryDate(entry.date) === dateFilter) &&
         (!monthFilter || normalizeDiaryDate(entry.date).startsWith(monthFilter)) &&
         (!employeeFilter || employeeKey === employeeFilter) &&
-        (!permissionFilter || entry.permission === permissionFilter) &&
-        (!violationFilter || violationTypes.includes(violationFilter));
+        (!permissionFilter || entry.permissionStatus === permissionFilter) &&
+        (!noteTypeFilters.length || noteTypeFilters.some((type) => noteTypes.includes(type)));
     });
     return sortDiaryEntries(matches);
   }, [
     dateFilter,
     employeeFilter,
     monthFilter,
+    noteTypeFilters,
     permissionFilter,
     search,
-    violationFilter,
     visibleEntries,
   ]);
 
@@ -110,6 +118,7 @@ export function useDiaryView({
     enrichedEntries,
     filteredEntries,
     monthFilter,
+    noteTypeFilters,
     permissionFilter,
     search,
     setDateFilter,
@@ -117,8 +126,7 @@ export function useDiaryView({
     setMonthFilter,
     setPermissionFilter,
     setSearch,
-    setViolationFilter,
-    violationFilter,
+    toggleNoteTypeFilter,
     visibleDiaryIds,
     visibleEmployees,
     visibleEntries,

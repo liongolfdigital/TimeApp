@@ -4,7 +4,10 @@ import XLSX_STYLE from "xlsx-js-style";
 import { importEmployeesFromExcel } from "./src/employees/employeeExcel.js";
 import { getEmployeeGroup, normalizeEmployeeCode } from "./src/employees/employeeModel.js";
 import { detectBranchFromText } from "./src/branches/branchModel.js";
-import { importDiaryFromExcel } from "./src/diary/diaryExcel.js";
+import {
+  buildDiaryExportRows,
+  importDiaryFromExcel,
+} from "./src/diary/diaryExcel.js";
 import {
   confirmAndDeleteSelectedDiaries,
   getDiaryBulkDeleteLabel,
@@ -13,8 +16,10 @@ import {
   toggleDiarySelection,
 } from "./src/diary/diarySelection.js";
 import {
+  normalizeDiaryNoteTypes,
   normalizeDiaryViolationTypes,
   parseDiaryDisplayDate,
+  sanitizeDiaryEntry,
   sortDiaryEntries,
 } from "./src/diary/diaryModel.js";
 import {
@@ -1828,22 +1833,93 @@ assert.equal(importedEmployees[0].fullIn, undefined);
 assert.equal(importedEmployees[0].fullOut, undefined);
 
 const diaryImportSheet = XLSX.utils.aoa_to_sheet([
-  ["Thứ", "Ngày", "Mã N.Viên", "Tên N.Viên", "Lý do", "Có / Không phép", "Biên bản", "Có hồ sơ"],
-  ["T4", new Date(2026, 6, 17), 4, "Nguyễn Văn A", "Kẹt xe có báo trước", "Có phép", "Đã báo quản lý", "Có"],
+  ["Báo cáo chấm công tháng 7"],
+  ["Mã N.Viên", "Tên N.Viên", "Ngày", "Vào 1", "Ra 1", "Ghi chú (KHÔNG VIẾT TẮT)", "Có / Không phép", "Người lập biên bản"],
+  ["00004", "Nguyễn Văn A", new Date(2026, 6, 17), 8 / 24, 17.5 / 24, "Kẹt xe có báo trước", "Có phép", "Quản lý A"],
 ]);
-diaryImportSheet.B2.z = "dd/mm/yyyy";
-diaryImportSheet.C2.z = "00000";
+diaryImportSheet.C3.z = "dd/mm/yyyy";
+diaryImportSheet.D3.z = "hh:mm";
+diaryImportSheet.E3.z = "hh:mm";
 const diaryImportWorkbook = XLSX.utils.book_new();
-XLSX.utils.book_append_sheet(diaryImportWorkbook, diaryImportSheet, "Xin đi trễ về sớm");
+XLSX.utils.book_append_sheet(diaryImportWorkbook, diaryImportSheet, "Bảng công mới");
 const diaryFile = new File(
   [XLSX.write(diaryImportWorkbook, { type: "array", bookType: "xlsx" })],
-  "Dairy.xlsx",
+  "Diary.xlsx",
 );
 const importedDiary = await importDiaryFromExcel(diaryFile);
 assert.equal(importedDiary.length, 1);
 assert.equal(importedDiary[0].date, "2026-07-17");
 assert.equal(importedDiary[0].employeeCode, "00004");
-assert.equal(importedDiary[0].permission, "Có phép");
+assert.equal(importedDiary[0].checkIn1, "08:00");
+assert.equal(importedDiary[0].checkOut1, "17:30");
+assert.equal(importedDiary[0].checkIn2, "");
+assert.equal(importedDiary[0].checkOut2, "");
+assert.equal(importedDiary[0].note, "Kẹt xe có báo trước");
+assert.equal(importedDiary[0].permissionStatus, "Có phép");
+assert.equal(importedDiary[0].recordMaker, "Quản lý A");
+assert.deepEqual(importedDiary[0].noteTypes, []);
+
+const diaryNoteTypesSheet = XLSX.utils.aoa_to_sheet([
+  ["Mã N.Viên", "Tên N.Viên", "Ngày", "Vào 1", "Ra 1", "Ghi chú", "Loại ghi chú"],
+  ["00005", "Nhân viên B", "18/07/2026", "8:05", "17:00", "Kẹt xe", "Đi trễ; Về sớm"],
+]);
+const diaryNoteTypesWorkbook = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(diaryNoteTypesWorkbook, diaryNoteTypesSheet, "Dữ liệu");
+const diaryNoteTypesFile = new File(
+  [XLSX.write(diaryNoteTypesWorkbook, { type: "array", bookType: "xlsx" })],
+  "Diary-note-types.xlsx",
+);
+const importedDiaryNoteTypes = await importDiaryFromExcel(diaryNoteTypesFile);
+assert.deepEqual(importedDiaryNoteTypes[0].noteTypes, ["Đi trễ", "Về sớm"]);
+
+assert.deepEqual(
+  normalizeDiaryNoteTypes(["Đi trễ", "Không hợp lệ", "OFF", "Đi trễ"]),
+  ["Đi trễ", "OFF"],
+);
+assert.deepEqual(
+  sanitizeDiaryEntry({ noteType: "Tăng ca; OFF" }).noteTypes,
+  ["Tăng ca", "OFF"],
+);
+assert.deepEqual(
+  sanitizeDiaryEntry({ category: ["Đi sớm", "Về sớm"] }).noteTypes,
+  ["Đi sớm", "Về sớm"],
+);
+
+const createdDiaryWithTypes = sanitizeDiaryEntry({
+  date: "2026-07-19",
+  employeeCode: "00006",
+  employeeName: "Nhân viên C",
+  note: "Tạo mới",
+  noteTypes: ["Đi trễ", "Về sớm"],
+});
+assert.deepEqual(createdDiaryWithTypes.noteTypes, ["Đi trễ", "Về sớm"]);
+const editedDiaryWithTypes = sanitizeDiaryEntry({
+  ...createdDiaryWithTypes,
+  noteTypes: ["Đi trễ", "OFF"],
+});
+assert.deepEqual(editedDiaryWithTypes.noteTypes, ["Đi trễ", "OFF"]);
+
+const diaryExportRows = buildDiaryExportRows([{
+  ...editedDiaryWithTypes,
+  permissionStatus: "Có phép",
+  recordMaker: "Quản lý B",
+  attachments: [{ fileName: "bien-ban.pdf" }],
+}]);
+assert.deepEqual(diaryExportRows[0], [
+  "Mã N.Viên",
+  "Tên N.Viên",
+  "Ngày",
+  "Vào 1",
+  "Ra 1",
+  "Vào 2",
+  "Ra 2",
+  "Ghi chú",
+  "Có/Không phép",
+  "Loại ghi chú",
+  "Người lập biên bản",
+  "File đính kèm",
+]);
+assert.equal(diaryExportRows[1][9], "Đi trễ, OFF");
 
 const workbookWithoutSheet = XLSX.utils.book_new();
 XLSX.utils.book_append_sheet(workbookWithoutSheet, XLSX.utils.aoa_to_sheet([["Khác"]]), "Sheet1");

@@ -6,17 +6,27 @@
 
 .date-field { min-width: 165px; }
 
-.diary-table { min-width: 2030px; }
+.diary-table { min-width: 2050px; }
 
-.diary-table th:nth-child(7), .diary-table td:nth-child(7) { min-width: 250px; max-width: 340px; }
+.diary-table .diary-cell-employeeCode { min-width: 115px; }
 
-.diary-table th:nth-child(9), .diary-table td:nth-child(9) { min-width: 180px; max-width: 240px; white-space: normal; }
+.diary-table .diary-cell-employeeName { min-width: 180px; }
 
-.diary-table th:nth-child(10), .diary-table td:nth-child(10) { min-width: 230px; max-width: 320px; }
+.diary-table .diary-cell-date,
+.diary-table .diary-cell-checkIn1,
+.diary-table .diary-cell-checkOut1,
+.diary-table .diary-cell-checkIn2,
+.diary-table .diary-cell-checkOut2 { min-width: 105px; }
 
-.diary-table th:nth-child(11), .diary-table td:nth-child(11) { min-width: 190px; max-width: 250px; }
+.diary-table .diary-cell-note { min-width: 250px; max-width: 360px; white-space: normal; }
 
-.diary-table th:nth-child(12), .diary-table td:nth-child(12) { min-width: 120px; max-width: 160px; }
+.diary-table .diary-cell-permissionStatus { min-width: 145px; }
+
+.diary-table .diary-cell-noteTypes { min-width: 180px; max-width: 240px; white-space: normal; }
+
+.diary-table .diary-cell-recordMaker { min-width: 190px; max-width: 250px; white-space: normal; }
+
+.diary-table .diary-cell-attachments { min-width: 130px; }
 
 .diary-table .actions-column { min-width: 130px; width: 130px; }
 
@@ -48,7 +58,15 @@
 
 .diary-form-files { min-width: 0; }
 
-.diary-violation-field { gap: 9px; }
+.diary-violation-field { min-width: 0; margin: 0; padding: 0; gap: 9px; border: 0; }
+
+.diary-violation-field legend {
+  margin: 0 0 9px;
+  padding: 0;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 800;
+}
 
 .diary-checkbox-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 
@@ -59,6 +77,57 @@
 .diary-checkbox-card.selected { color: var(--green-dark); border-color: #a9d1b8; background: #eaf6ef; }
 
 .diary-checkbox-card input { flex: 0 0 auto; width: 15px; height: 15px; min-height: 0; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; accent-color: var(--green); }
+
+.diary-note-type-filter {
+  min-width: min(100%, 480px);
+  margin: 0;
+  padding: 9px 11px 10px;
+  border: 1px solid #d8e3db;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.diary-note-type-filter legend {
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.diary-note-type-filter > div { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.diary-note-type-filter label {
+  min-height: 30px;
+  padding: 5px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #52675e;
+  border: 1px solid #dfe7e1;
+  border-radius: 8px;
+  background: #fafbf9;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.diary-note-type-filter label.selected {
+  color: var(--green-dark);
+  border-color: #a9d1b8;
+  background: #eaf6ef;
+}
+
+.diary-note-type-filter input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--green);
+}
 
 .employee-lookup-summary { padding: 11px 13px; display: flex; gap: 30px; border: 1px solid #dce7df; border-radius: 10px; background: #f4f9f5; }
 

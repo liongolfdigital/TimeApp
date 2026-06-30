@@ -2,20 +2,42 @@ import { normalizeLookup } from "../employees/employeeModel.js";
 import { normalizeDiaryDate } from "./diaryDateUtils.js";
 import {
   normalizeDiaryEmployeeCode,
-  normalizeDiaryViolationTypes,
   sanitizeDiaryEntry,
 } from "./diaryNormalizers.js";
 
 export function getDiaryIdentity(entry) {
   const code = normalizeDiaryEmployeeCode(entry.employeeCode);
   const name = normalizeLookup(entry.employeeName);
-  const person = code ? `code:${code}` : `name:${name}`;
+  const person = code ? `code:${code}` : name ? `name:${name}` : `id:${entry.id ?? ""}`;
   const branch = normalizeLookup(entry.branch);
-  const violationTypes = normalizeDiaryViolationTypes(entry.violationTypes)
-    .map(normalizeLookup)
-    .sort()
-    .join(",");
-  return `${branch}|${normalizeDiaryDate(entry.date)}|${person}|${normalizeLookup(entry.reason)}|${violationTypes}`;
+  return `${branch}|${normalizeDiaryDate(entry.date)}|${person}`;
+}
+
+function preserveImportedInternalFields(existing, imported) {
+  const permissionStatus = imported.permissionStatus || existing?.permissionStatus || "";
+  const recordMaker = imported.recordMaker || existing?.recordMaker || "";
+  const attachments = existing?.attachments?.length
+    ? existing.attachments
+    : imported.attachments;
+  const attachedFiles = existing?.attachedFiles?.length
+    ? existing.attachedFiles
+    : attachments;
+  const noteTypes = imported.noteTypes.length
+    ? imported.noteTypes
+    : existing?.noteTypes ?? existing?.violationTypes ?? [];
+
+  return {
+    permissionStatus,
+    permission: permissionStatus,
+    recordMaker,
+    creatorName: recordMaker,
+    creatorCode: imported.creatorCode || existing?.creatorCode || "",
+    attachments,
+    attachedFiles,
+    noteTypes,
+    violationTypes: noteTypes,
+    bienBan: imported.bienBan || existing?.bienBan || "",
+  };
 }
 
 export function mergeDiaryEntries(currentEntries, importedEntries) {
@@ -31,6 +53,7 @@ export function mergeDiaryEntries(currentEntries, importedEntries) {
       }];
     }),
   );
+
   importedEntries.forEach((entry) => {
     const sanitized = sanitizeDiaryEntry(entry);
     const identity = getDiaryIdentity(sanitized);
@@ -39,9 +62,8 @@ export function mergeDiaryEntries(currentEntries, importedEntries) {
     merged.set(identity, {
       ...existing,
       ...sanitized,
+      ...preserveImportedInternalFields(existing, sanitized),
       id: existing?.id || sanitized.id,
-      creatorCode: sanitized.creatorCode || existing?.creatorCode || "",
-      creatorName: sanitized.creatorName || existing?.creatorName || "",
       createdAt,
       updatedAt: sanitized.updatedAt || now,
     });
