@@ -27,7 +27,7 @@ export const KEPT_COLUMNS = Object.freeze([
 
 // Cấu hình cột nguồn loại bỏ, cột tính mới và hộp tổng hợp nhân viên.
 export const REMOVED_COLUMNS = Object.freeze(["Ngày Công", "TC1", "TC2", "TC3", "Tổng cộng"]);
-export const ADDED_COLUMNS = Object.freeze(["Đi sớm", "Đi trễ", "Phạt", "Về sớm", "Tăng ca", "Ghi chú", "Tổng làm"]);
+export const ADDED_COLUMNS = Object.freeze(["Đi sớm", "Đi trễ", "Phạt", "Về sớm", "Tăng ca", "Trừ khác", "Ghi chú", "Tổng làm"]);
 export const SUMMARY_COLUMNS = Object.freeze(["Nhân viên", "Tổng"]);
 export const OUTPUT_COLUMNS = Object.freeze([...KEPT_COLUMNS, ...ADDED_COLUMNS, ...SUMMARY_COLUMNS]);
 

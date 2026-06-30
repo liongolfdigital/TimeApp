@@ -98,6 +98,7 @@ function writeCalculatedRows(XLSX, targetSheet, rowResults, outputStartColumn) {
       [calculation.penalty, "#,##0"],
       [calculation.earlyMinutes, "0"],
       [calculation.overtimeMinutes, "0"],
+      [calculation.otherDeductionMinutes, "0"],
       [calculation.note],
       [minutesToExcelTime(calculation.totalWorkedMinutes), "[hh]:mm"],
     ];
@@ -139,7 +140,7 @@ function copySheetLayout({
     return sourceColumns[sourceColumn] ? structuredClone(sourceColumns[sourceColumn]) : undefined;
   });
   targetSheet["!cols"].push(
-    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 34 }, { wch: 14 },
+    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 34 }, { wch: 14 },
     { wch: 18 }, { wch: 12 },
   );
   targetSheet["!autofilter"] = {

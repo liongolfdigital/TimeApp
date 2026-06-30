@@ -9,6 +9,9 @@ import {
 } from "../services/attendance/diaryReasonService.js";
 import { normalizeDiaryViolationTypes } from "../diary/diaryNormalizers.js";
 
+const OTHER_DEDUCTION_TYPE = "Khác";
+const OTHER_DEDUCTION_SOURCE_KEYS = new Set(["late", "early"]);
+
 const VIOLATION_TYPES = [
   {
     key: "earlyIn",
@@ -46,6 +49,26 @@ function shouldAutoCountOver60(violationKey, minutes) {
   return false;
 }
 
+function hasDiaryType(entry, type) {
+  return normalizeDiaryViolationTypes(entry?.noteTypes ?? entry?.violationTypes).includes(type);
+}
+
+function findOtherDeductionDiaryMatch(diaryLookup, {
+  date,
+  employeeCode,
+  employeeName,
+} = {}) {
+  const match = findDiaryForViolation(diaryLookup, {
+    date,
+    employeeCode,
+    employeeName,
+    violationType: OTHER_DEDUCTION_TYPE,
+  });
+  // findDiaryForViolation có fallback dòng không phân loại; Trừ khác chỉ được áp dụng
+  // khi Diary thật sự tick Loại ghi chú = Khác.
+  return match && hasDiaryType(match.entry, OTHER_DEDUCTION_TYPE) ? match : null;
+}
+
 /** Nối ghi chú mới bằng `; ` mà không ghi đè hoặc tạo nội dung trùng. */
 export function appendNote(currentNote, appendedNote) {
   if (!appendedNote) return currentNote || "";
@@ -75,13 +98,14 @@ export function applyDiaryViolations({
   row,
 }) {
   calculation.violationStatuses = {};
-  // Đi trễ phát sinh luôn vào Tổng đi trễ; Diary Có phép chỉ có thể xóa tiền Phạt.
+  // Đi trễ phát sinh luôn vào Tổng đi trễ; riêng Diary loại Khác được chuyển sang Trừ khác.
   calculation.totalLateMinutes = Number(calculation.lateMinutes) > 0
     ? Number(calculation.lateMinutes)
     : 0;
   calculation.validEarlyInMinutes = 0;
   calculation.validEarlyMinutes = 0;
   calculation.validOvertimeMinutes = 0;
+  calculation.otherDeductionMinutes = 0;
   let diaryMatched = false;
   let diaryExempted = false;
 
@@ -96,22 +120,33 @@ export function applyDiaryViolations({
       employeeName: effectiveEmployeeName,
       violationType: config.type,
     });
+    const otherDeductionMatch = OTHER_DEDUCTION_SOURCE_KEYS.has(config.key)
+      ? findOtherDeductionDiaryMatch(diaryLookup, {
+          date: dateValue,
+          employeeCode,
+          employeeName: effectiveEmployeeName,
+        })
+      : null;
+    const isOtherDeduction = Boolean(otherDeductionMatch);
+    const effectiveDiaryMatch = diaryMatch ?? otherDeductionMatch;
     const previousPenalty = calculation.penalty;
     let status = "missingDiary";
     let hasTypedDiaryMatch = false;
 
-    if (diaryMatch) {
+    if (effectiveDiaryMatch) {
       diaryMatched = true;
-      const permitted = isDiaryPermitted(diaryMatch.entry);
-      hasTypedDiaryMatch = normalizeDiaryViolationTypes(
-        diaryMatch.entry.noteTypes ?? diaryMatch.entry.violationTypes,
-      ).includes(config.type);
+      const permitted = isDiaryPermitted(effectiveDiaryMatch.entry);
+      hasTypedDiaryMatch = isOtherDeduction
+        ? true
+        : hasDiaryType(effectiveDiaryMatch.entry, config.type);
       status = permitted ? "permitted" : "notPermitted";
-      if (permitted && !isOfficeOvertime) diaryExempted = true;
-      const diaryReason = getDiaryReason(diaryMatch.entry);
-      const diaryNotePrefix = isOfficeOvertime
-        ? "Tăng ca VP không tính tổng"
-        : `${config.type} ${permitted ? "có phép" : "không phép"}`;
+      if (permitted && !isOfficeOvertime && !isOtherDeduction) diaryExempted = true;
+      const diaryReason = getDiaryReason(effectiveDiaryMatch.entry);
+      const diaryNotePrefix = isOtherDeduction
+        ? `Trừ khác (${config.type})`
+        : isOfficeOvertime
+          ? "Tăng ca VP không tính tổng"
+          : `${config.type} ${permitted ? "có phép" : "không phép"}`;
       calculation.note = appendNote(
         calculation.note,
         diaryReason ? `${diaryNotePrefix}: ${diaryReason}` : diaryNotePrefix,
@@ -129,20 +164,31 @@ export function applyDiaryViolations({
       );
     }
 
-    calculation.violationStatuses[config.key] =
-      isAutoTotalViolation && !diaryMatch
+    calculation.violationStatuses[config.key] = isOtherDeduction
+      ? "otherDeduction"
+      : isAutoTotalViolation && !diaryMatch
         ? "autoTotal"
         : status;
+
     if (config.key === "late") {
-      if (status === "permitted") {
+      if (isOtherDeduction) {
+        calculation.otherDeductionMinutes += minutes;
+        calculation.totalLateMinutes = 0;
+        calculation.penalty = 0;
+      } else if (status === "permitted") {
         calculation.penalty = 0;
       }
     } else if (config.key === "earlyIn") {
       // Đi sớm chỉ hiển thị/audit và lấy lý do Diary, không cộng Tổng đi sớm.
       calculation.validEarlyInMinutes = 0;
     } else if (config.key === "early") {
-      // Về sớm phát sinh luôn vào Tổng về sớm, không phụ thuộc trạng thái Diary.
-      calculation.validEarlyMinutes = minutes;
+      if (isOtherDeduction) {
+        calculation.otherDeductionMinutes += minutes;
+        calculation.validEarlyMinutes = 0;
+      } else {
+        // Về sớm phát sinh luôn vào Tổng về sớm, không phụ thuộc trạng thái Diary.
+        calculation.validEarlyMinutes = minutes;
+      }
     } else if (isOfficeOvertime) {
       // VP vẫn hiển thị/tô màu Tăng ca theo ngày, nhưng tuyệt đối không cộng vào tổng.
       calculation.validOvertimeMinutes = 0;
@@ -155,26 +201,26 @@ export function applyDiaryViolations({
       calculation[config.validField] = status === "permitted" ? minutes : 0;
     }
 
-    if (diaryMatch) {
+    if (effectiveDiaryMatch) {
       diaryMatchLogs.push({
         rowNumber: row + 1,
         employeeCode,
         employeeName,
-        date: diaryMatch.entry.date,
-        matchType: diaryMatch.matchType,
-        violationType: config.type,
-        reason: diaryMatch.entry.reason,
-        permission: diaryMatch.entry.permission,
-        creatorCode: diaryMatch.entry.creatorCode,
-        creatorName: diaryMatch.entry.creatorName,
+        date: effectiveDiaryMatch.entry.date,
+        matchType: effectiveDiaryMatch.matchType,
+        violationType: isOtherDeduction ? `Khác (${config.type})` : config.type,
+        reason: effectiveDiaryMatch.entry.reason,
+        permission: effectiveDiaryMatch.entry.permission,
+        creatorCode: effectiveDiaryMatch.entry.creatorCode,
+        creatorName: effectiveDiaryMatch.entry.creatorName,
         attachmentCount:
-          (diaryMatch.entry.attachedFiles ?? diaryMatch.entry.attachments)?.length ?? 0,
+          (effectiveDiaryMatch.entry.attachedFiles ?? effectiveDiaryMatch.entry.attachments)?.length ?? 0,
         hasAttachments: Boolean(
-          (diaryMatch.entry.attachedFiles ?? diaryMatch.entry.attachments)?.length,
+          (effectiveDiaryMatch.entry.attachedFiles ?? effectiveDiaryMatch.entry.attachments)?.length,
         ),
         previousPenalty,
         finalPenalty: calculation.penalty,
-        exempted: status === "permitted" && !isOfficeOvertime,
+        exempted: status === "permitted" && !isOfficeOvertime && !isOtherDeduction,
       });
     }
   });

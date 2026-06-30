@@ -59,7 +59,7 @@ export function buildEmployeeSummaries(rowResults) {
     const current = summaries.get(employeeCode) ?? {
       firstRow: row, employeeCode, employeeName,
       lateMinutes: 0, earlyInMinutes: 0, penalty: 0, earlyMinutes: 0, overtimeMinutes: 0,
-      workDayCount: 0, workedDayKeys: new Set(),
+      otherDeductionMinutes: 0, workDayCount: 0, workedDayKeys: new Set(),
     };
     current.firstRow = Math.min(current.firstRow, row);
     if (isWorkedDay(rowResult, summaryMonthKey)) {
@@ -74,6 +74,7 @@ export function buildEmployeeSummaries(rowResults) {
     if (!isVpEmployee(employeeName)) {
       current.overtimeMinutes += Number(calculation.validOvertimeMinutes) || 0;
     }
+    current.otherDeductionMinutes += Number(calculation.otherDeductionMinutes) || 0;
     summaries.set(employeeCode, current);
   });
   return Array.from(summaries.values()).map((summary) => ({
@@ -97,6 +98,7 @@ export function writeEmployeeSummaryBox(
     ["Đi sớm", summary.earlyInMinutes],
     ["Đi trễ", summary.lateMinutes], ["Phạt", summary.penalty],
     ["Về sớm", summary.earlyMinutes], ["Tăng ca", summary.overtimeMinutes],
+    ["Trừ khác", summary.otherDeductionMinutes ?? 0],
   ];
   values.forEach((items, rowOffset) => items.forEach((value, columnOffset) => {
     const address = XLSX.utils.encode_cell({ r: row + rowOffset, c: startColumn + columnOffset });

@@ -237,6 +237,7 @@ export async function mergeProcessedExcelResults(
         penalty: 0,
         earlyMinutes: 0,
         overtimeMinutes: 0,
+        otherDeductionMinutes: 0,
         workDayCount: 0,
         workedDayKeys: [],
       };
@@ -249,6 +250,7 @@ export async function mergeProcessedExcelResults(
       combined.penalty += Number(summary.penalty) || 0;
       combined.earlyMinutes += Number(summary.earlyMinutes) || 0;
       combined.overtimeMinutes += Number(summary.overtimeMinutes) || 0;
+      combined.otherDeductionMinutes += Number(summary.otherDeductionMinutes) || 0;
       const workedDayKeys = new Set(combined.workedDayKeys ?? []);
       (summary.workedDayKeys ?? []).forEach((dayKey) => {
         if (dayKey) workedDayKeys.add(dayKey);
