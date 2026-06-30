@@ -173,6 +173,8 @@ export function applyDiaryViolations({
     if (config.key === "late") {
       if (isOtherDeduction) {
         calculation.otherDeductionMinutes += minutes;
+        // Đã chuyển sang Trừ khác thì không còn ghi ở cột Đi trễ và không cộng/phạt đi trễ.
+        calculation.lateMinutes = 0;
         calculation.totalLateMinutes = 0;
         calculation.penalty = 0;
       } else if (status === "permitted") {
@@ -184,6 +186,8 @@ export function applyDiaryViolations({
     } else if (config.key === "early") {
       if (isOtherDeduction) {
         calculation.otherDeductionMinutes += minutes;
+        // Đã chuyển sang Trừ khác thì không còn ghi ở cột Về sớm và không cộng tổng về sớm.
+        calculation.earlyMinutes = 0;
         calculation.validEarlyMinutes = 0;
       } else {
         // Về sớm phát sinh luôn vào Tổng về sớm, không phụ thuộc trạng thái Diary.
