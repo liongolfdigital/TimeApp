@@ -20,7 +20,28 @@ function getWorkedDayKey(rowResult) {
   return rowResult.dayKey || String(rowResult.row);
 }
 
-function isWorkedDay(rowResult) {
+function getMonthKeyFromDayKey(dayKey) {
+  const match = String(dayKey ?? "").match(/^(\d{4}-\d{2})-\d{2}$/);
+  return match ? match[1] : "";
+}
+
+function getSummaryMonthKey(rowResults = []) {
+  const monthKeys = rowResults
+    .map((rowResult) => getMonthKeyFromDayKey(rowResult.dayKey))
+    .filter(Boolean);
+  if (!monthKeys.length) return "";
+  // File máy chấm công thường kéo theo vài ngày cuối tháng trước.
+  // Lấy tháng mới nhất trong dữ liệu làm tháng báo cáo hiện tại để Tổng công không cộng ngày tháng cũ.
+  return monthKeys.sort().at(-1);
+}
+
+function isInSummaryMonth(rowResult, summaryMonthKey) {
+  if (!summaryMonthKey) return true;
+  return getMonthKeyFromDayKey(rowResult.dayKey) === summaryMonthKey;
+}
+
+function isWorkedDay(rowResult, summaryMonthKey = "") {
+  if (!isInSummaryMonth(rowResult, summaryMonthKey)) return false;
   if (rowResult.isOff) return false;
   if (Number(rowResult.calculation?.totalWorkedMinutes) > 0) return true;
   return hasClockValue(rowResult.clockValues) ||
@@ -31,6 +52,7 @@ function isWorkedDay(rowResult) {
 /** Cộng số phút/tiền theo nhân viên; Tổng đi trễ dùng toàn bộ phút trễ thực tế. */
 export function buildEmployeeSummaries(rowResults) {
   const summaries = new Map();
+  const summaryMonthKey = getSummaryMonthKey(rowResults);
   rowResults.forEach((rowResult) => {
     const { row, calculation, employeeCode, employeeName } = rowResult;
     if (!employeeCode) return;
@@ -40,7 +62,7 @@ export function buildEmployeeSummaries(rowResults) {
       workDayCount: 0, workedDayKeys: new Set(),
     };
     current.firstRow = Math.min(current.firstRow, row);
-    if (isWorkedDay(rowResult)) {
+    if (isWorkedDay(rowResult, summaryMonthKey)) {
       current.workedDayKeys.add(getWorkedDayKey(rowResult));
       current.workDayCount = current.workedDayKeys.size;
     }
