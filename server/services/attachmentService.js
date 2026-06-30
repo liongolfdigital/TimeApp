@@ -1,15 +1,9 @@
-import fs from "node:fs";
-import path from "node:path";
-import { del, put } from "@vercel/blob";
+import { createAttachmentFileStorage } from "../storage/attachmentFileStorage.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isUuid(value) {
   return UUID_PATTERN.test(String(value ?? ""));
-}
-
-function safeFilename(name) {
-  return path.basename(String(name || "attachment")).replace(/[^\w.-]+/g, "_");
 }
 
 /** Nghiệp vụ lưu trữ, phân quyền và metadata file Diary. */
@@ -29,6 +23,11 @@ export function createAttachmentService({
   serializeAttachment,
   createId,
 }) {
+  const {
+    removeStoredFile,
+    storeUploadedFile,
+  } = createAttachmentFileStorage({ isProduction, uploadDirectory });
+
   function canAccessAttachment(user, attachment) {
     if (!attachment) return false;
     if (user?.role === "Admin") return true;
@@ -41,42 +40,6 @@ export function createAttachmentService({
     return attachment.uploaded_by_account_id === user.id
       || normalizeUsername(attachment.uploaded_by_username)
         === normalizeUsername(user.username);
-  }
-
-  async function removeStoredFile(attachment) {
-    const blobUrl = attachment?.blob_url || "";
-    const pathname = attachment?.blob_pathname || "";
-    if (/^https?:\/\//i.test(blobUrl)) {
-      if (!process.env.BLOB_READ_WRITE_TOKEN) return;
-      await del(blobUrl).catch(() => {});
-      return;
-    }
-    if (!pathname) return;
-    await fs.promises.unlink(pathname).catch((error) => {
-      if (error.code !== "ENOENT") throw error;
-    });
-  }
-
-  async function storeUploadedFile(file, id) {
-    const extension = path.extname(file.originalname).toLocaleLowerCase();
-    const storedName = `${Date.now()}-${safeFilename(file.originalname) || `${id}${extension}`}`;
-    if (process.env.BLOB_READ_WRITE_TOKEN) {
-      const blob = await put(`diary-attachments/${id}/${storedName}`, file.buffer, {
-        access: "public",
-        contentType: file.mimetype || "application/octet-stream",
-        addRandomSuffix: false,
-      });
-      return { blobUrl: blob.url, blobPathname: blob.pathname };
-    }
-    if (isProduction) {
-      const error = new Error("Vercel Blob chua duoc cau hinh cho file dinh kem.");
-      error.status = 503;
-      throw error;
-    }
-    await fs.promises.mkdir(uploadDirectory, { recursive: true });
-    const localPath = path.join(uploadDirectory, `${id}-${storedName}`);
-    await fs.promises.writeFile(localPath, file.buffer);
-    return { blobUrl: `/api/attachments/${id}/content`, blobPathname: localPath };
   }
 
   function getConfig() {
