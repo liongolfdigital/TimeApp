@@ -15,7 +15,6 @@ import {
   formatEmployeeBrief,
   getEmployeeBranch,
   getEmployeeFilterKey,
-  makeProcessedFileName,
   validateProcessFile,
 } from "../utils/processFileUtils";
 
@@ -226,7 +225,7 @@ export function useAttendanceProcessing({ employees, diaryEntries, shiftRules })
               filteredOutRows: result.filteredOutRows,
             },
             resultFile: exportMode === "separate"
-              ? { ...result, fileName: makeProcessedFileName(item.name) }
+              ? result
               : null,
           });
         } catch (error) {

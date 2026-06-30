@@ -167,7 +167,7 @@ export default function AttendancePage({ employees, diaryEntries, shiftRules, on
           />
           <section className="download-card">
             <div className="download-icon"><DownloadIcon size={29} /></div>
-            <div className="download-copy"><div className="eyebrow">File kết quả</div><h2>Sẵn sàng để tải xuống</h2><p>{OUTPUT_FILE_NAME}</p></div>
+            <div className="download-copy"><div className="eyebrow">File kết quả</div><h2>Sẵn sàng để tải xuống</h2><p>{result.fileName || OUTPUT_FILE_NAME}</p></div>
             <button className="button button-dark download-button" type="button" onClick={() => downloadProcessedFile(result.blob, result.fileName)}>
               <DownloadIcon size={19} /> Tải file Excel kết quả
             </button>

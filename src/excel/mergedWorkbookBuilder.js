@@ -316,6 +316,9 @@ export async function mergeProcessedExcelResults(
   );
   appendMissingEmployeesSheet(XLSX, workbook, missingEmployees);
   normalizeDateCellsForStyledWrite(workbook);
+  const mergedBranchNames = Array.from(new Set(
+    mergedEmployeeDetailRows.map((rowResult) => rowResult.branch).filter(Boolean),
+  ));
   const outputBuffer = XLSX_STYLE.write(workbook, {
     bookType: "xlsx",
     type: "array",
@@ -326,7 +329,10 @@ export async function mergeProcessedExcelResults(
     blob: new Blob([outputBuffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }),
-    fileName: fileName || makeMergedOutputFileName(processFilters),
+    fileName: fileName || makeMergedOutputFileName(processFilters, {
+      rowResults: mergedEmployeeDetailRows,
+      branchNames: mergedBranchNames,
+    }),
     totalRows,
     sourceFileCount: availableResults.length,
     headers: mergedHeaders,

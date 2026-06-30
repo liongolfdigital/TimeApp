@@ -172,7 +172,7 @@ export async function processExcelFile(
     highlights,
     processedRows,
     sourceFileName: file?.name || "",
-    fileName: makeOutputFileName(branchName),
+    fileName: makeOutputFileName(branchName, { rowResults: employeeDetailRows }),
     ...(includeProcessedSheet ? {
       processedSheet,
       processedHeaderRow: headerRow,
