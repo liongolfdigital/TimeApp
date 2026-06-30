@@ -36,6 +36,7 @@ const VIOLATION_TYPES = [
 ];
 
 // Hai flag giữ nguyên rule cũ cho Đi sớm; riêng Tăng ca tuyệt đối không tự cộng tổng.
+export const ENABLE_AUTO_COUNT_OVERTIME_OVER_60 = false;
 export const ENABLE_AUTO_COUNT_EARLY_OVER_60 = false;
 
 function shouldAutoCountOver60(violationKey, minutes) {
