@@ -3,6 +3,7 @@
  * Sheet nhân viên chỉ dùng dữ liệu đã xử lý và ghi chú gốc từ Diary.
  */
 import { normalizeEmployeeCode, normalizeLookup, normalizeText } from "../employees/employeeModel.js";
+import { isVpEmployee } from "../services/attendance/vpRuleService.js";
 import { timeValueToMinutes } from "../utils/timeUtils.js";
 import { writeCalculatedCell } from "./excelWriter.js";
 
@@ -25,6 +26,7 @@ export const EMPLOYEE_ATTENDANCE_HEADERS = Object.freeze([
 const INVALID_SHEET_NAME_CHARS = /[\\/?*:\[\]]/g;
 const TITLE_FILL = "D9EAD3";
 const HEADER_FILL = "E2F0D9";
+const SUMMARY_FILL = "FFF2CC";
 
 function hasClockValue(clockValues = {}) {
   return Object.values(clockValues ?? {}).some((value) =>
@@ -43,6 +45,11 @@ function getReportMonthKey(rowResults = []) {
     .filter(Boolean);
   if (!monthKeys.length) return "";
   return monthKeys.sort().at(-1);
+}
+
+function isInReportMonth(rowResult, reportMonthKey = "") {
+  if (!reportMonthKey) return true;
+  return getMonthKeyFromDayKey(rowResult.dayKey) === reportMonthKey;
 }
 
 function formatMonthTitle(monthKey) {
@@ -104,10 +111,27 @@ function isWorkedDay(rowResult) {
     hasClockValue(rowResult.originalClockValues);
 }
 
-function makeEmployeeGroups(rowResults = [], reportMonthKey = "") {
+function getWorkedDayKey(rowResult) {
+  return rowResult.dayKey || String(rowResult.row ?? "");
+}
+
+function getDisplayWorkDay(rowResult, reportMonthKey = "") {
+  if (!isInReportMonth(rowResult, reportMonthKey)) return 0;
+  return isWorkedDay(rowResult) ? 1 : 0;
+}
+
+function sortEmployeeRows(rows = []) {
+  return [...rows].sort((left, right) => {
+    const leftDay = String(left.dayKey ?? "");
+    const rightDay = String(right.dayKey ?? "");
+    if (leftDay && rightDay && leftDay !== rightDay) return leftDay.localeCompare(rightDay);
+    return Number(left.row ?? 0) - Number(right.row ?? 0);
+  });
+}
+
+function makeEmployeeGroups(rowResults = []) {
   const groups = new Map();
   rowResults.forEach((rowResult) => {
-    if (reportMonthKey && getMonthKeyFromDayKey(rowResult.dayKey) !== reportMonthKey) return;
     const key = getEmployeeKey(rowResult);
     if (!key) return;
     const current = groups.get(key) ?? {
@@ -117,7 +141,10 @@ function makeEmployeeGroups(rowResults = [], reportMonthKey = "") {
     current.rows.push(rowResult);
     groups.set(key, current);
   });
-  return Array.from(groups.values());
+  return Array.from(groups.values()).map((group) => ({
+    ...group,
+    rows: sortEmployeeRows(group.rows),
+  }));
 }
 
 function applyCellStyle(cell, style) {
@@ -146,7 +173,38 @@ function writeNumberCell(sheet, XLSX, row, column, value) {
   writeCalculatedCell(sheet, address, Number(value) || 0, "0");
 }
 
-function writeEmployeeSheetRows({ XLSX, sheet, rows }) {
+function buildEmployeeSheetSummary(rows = [], { employeeName = "", reportMonthKey = "" } = {}) {
+  const summary = {
+    earlyInMinutes: 0,
+    lateMinutes: 0,
+    earlyMinutes: 0,
+    overtimeMinutes: 0,
+    otherDeductionMinutes: 0,
+    workDayCount: 0,
+    workedDayKeys: new Set(),
+  };
+
+  rows.forEach((rowResult) => {
+    // Summary của sheet nhân viên chỉ tính tháng báo cáo; dữ liệu tháng trước vẫn hiện để đối chiếu.
+    if (!isInReportMonth(rowResult, reportMonthKey)) return;
+    const calculation = rowResult.calculation ?? {};
+    summary.earlyInMinutes += Number(calculation.validEarlyInMinutes) || 0;
+    summary.lateMinutes += Number(calculation.totalLateMinutes) || 0;
+    summary.earlyMinutes += Number(calculation.validEarlyMinutes) || 0;
+    if (!isVpEmployee(employeeName)) {
+      summary.overtimeMinutes += Number(calculation.validOvertimeMinutes) || 0;
+    }
+    summary.otherDeductionMinutes += Number(calculation.otherDeductionMinutes) || 0;
+    if (isWorkedDay(rowResult)) {
+      summary.workedDayKeys.add(getWorkedDayKey(rowResult));
+      summary.workDayCount = summary.workedDayKeys.size;
+    }
+  });
+
+  return summary;
+}
+
+function writeEmployeeSheetRows({ XLSX, sheet, rows, reportMonthKey }) {
   rows.forEach((rowResult, index) => {
     const row = index + 3;
     const calculation = rowResult.calculation ?? {};
@@ -162,7 +220,7 @@ function writeEmployeeSheetRows({ XLSX, sheet, rows }) {
       Number(calculation.earlyMinutes) || 0,
       Number(calculation.overtimeMinutes) || 0,
       Number(calculation.otherDeductionMinutes) || 0,
-      isWorkedDay(rowResult) ? 1 : 0,
+      getDisplayWorkDay(rowResult, reportMonthKey),
       rowResult.diaryNote ?? "",
     ];
 
@@ -180,7 +238,46 @@ function writeEmployeeSheetRows({ XLSX, sheet, rows }) {
   });
 }
 
-function createEmployeeSheet(XLSX, { employeeName, monthLabel, rows }) {
+function writeEmployeeSummaryRow({ XLSX, sheet, row, summary }) {
+  const summaryValues = [
+    "Tổng",
+    "",
+    "",
+    "",
+    "",
+    "",
+    Number(summary.earlyInMinutes) || 0,
+    Number(summary.lateMinutes) || 0,
+    Number(summary.earlyMinutes) || 0,
+    Number(summary.overtimeMinutes) || 0,
+    Number(summary.otherDeductionMinutes) || 0,
+    Number(summary.workDayCount) || 0,
+    "",
+  ];
+  const summaryStyle = {
+    fill: { patternType: "solid", fgColor: { rgb: SUMMARY_FILL } },
+    font: { bold: true },
+    alignment: { horizontal: "center", vertical: "center", wrapText: true },
+    border: {
+      top: { style: "thin", color: { rgb: "B7B7B7" } },
+      bottom: { style: "thin", color: { rgb: "B7B7B7" } },
+      left: { style: "thin", color: { rgb: "B7B7B7" } },
+      right: { style: "thin", color: { rgb: "B7B7B7" } },
+    },
+  };
+
+  summaryValues.forEach((value, column) => {
+    if (column >= 6 && column <= 11) {
+      writeNumberCell(sheet, XLSX, row, column, value);
+      const address = XLSX.utils.encode_cell({ r: row, c: column });
+      applyCellStyle(sheet[address], summaryStyle);
+      return;
+    }
+    writeTextCell(sheet, XLSX, row, column, value, summaryStyle);
+  });
+}
+
+function createEmployeeSheet(XLSX, { employeeName, monthLabel, reportMonthKey, rows }) {
   const sheet = {};
   const lastColumn = EMPLOYEE_ATTENDANCE_HEADERS.length - 1;
 
@@ -212,9 +309,12 @@ function createEmployeeSheet(XLSX, { employeeName, monthLabel, rows }) {
     });
   });
 
-  writeEmployeeSheetRows({ XLSX, sheet, rows });
-
+  writeEmployeeSheetRows({ XLSX, sheet, rows, reportMonthKey });
+  const summary = buildEmployeeSheetSummary(rows, { employeeName, reportMonthKey });
   const dataEndRow = Math.max(2, rows.length + 2);
+  const summaryRow = dataEndRow + 1;
+  writeEmployeeSummaryRow({ XLSX, sheet, row: summaryRow, summary });
+
   sheet["!cols"] = [
     { wch: 12 },
     { wch: 8 },
@@ -230,7 +330,13 @@ function createEmployeeSheet(XLSX, { employeeName, monthLabel, rows }) {
     { wch: 11 },
     { wch: 42 },
   ];
-  sheet["!rows"] = [{ hpt: 24 }, { hpt: 22 }, { hpt: 22 }];
+  sheet["!rows"] = [
+    { hpt: 24 },
+    { hpt: 22 },
+    { hpt: 22 },
+    ...Array.from({ length: rows.length }, () => undefined),
+    { hpt: 22 },
+  ];
   sheet["!autofilter"] = {
     ref: XLSX.utils.encode_range({
       s: { r: 2, c: 0 },
@@ -239,7 +345,7 @@ function createEmployeeSheet(XLSX, { employeeName, monthLabel, rows }) {
   };
   sheet["!ref"] = XLSX.utils.encode_range({
     s: { r: 0, c: 0 },
-    e: { r: dataEndRow, c: lastColumn },
+    e: { r: summaryRow, c: lastColumn },
   });
   return sheet;
 }
@@ -250,10 +356,11 @@ export function appendEmployeeAttendanceSheets(XLSX, workbook, rowResults = []) 
   const monthLabel = formatMonthTitle(reportMonthKey);
   if (!monthLabel) return;
 
-  makeEmployeeGroups(rowResults, reportMonthKey).forEach((group) => {
+  makeEmployeeGroups(rowResults).forEach((group) => {
     const sheet = createEmployeeSheet(XLSX, {
       employeeName: group.employeeName,
       monthLabel,
+      reportMonthKey,
       rows: group.rows,
     });
     XLSX.utils.book_append_sheet(
