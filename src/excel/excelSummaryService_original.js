@@ -10,40 +10,16 @@ import { OUTPUT_COLUMNS } from "../constants/excelConstants.js";
 import { isVpEmployee } from "../services/attendance/vpRuleService.js";
 import { writeCalculatedCell } from "./excelWriter.js";
 
-function hasClockValue(clockValues = {}) {
-  return Object.values(clockValues ?? {}).some((value) =>
-    value !== null && value !== undefined && String(value).trim() !== "",
-  );
-}
-
-function getWorkedDayKey(rowResult) {
-  return rowResult.dayKey || String(rowResult.row);
-}
-
-function isWorkedDay(rowResult) {
-  if (rowResult.isOff) return false;
-  if (Number(rowResult.calculation?.totalWorkedMinutes) > 0) return true;
-  return hasClockValue(rowResult.clockValues) ||
-    hasClockValue(rowResult.shopClockValues) ||
-    hasClockValue(rowResult.originalClockValues);
-}
-
 /** Cộng số phút/tiền theo nhân viên; Tổng đi trễ dùng toàn bộ phút trễ thực tế. */
 export function buildEmployeeSummaries(rowResults) {
   const summaries = new Map();
-  rowResults.forEach((rowResult) => {
-    const { row, calculation, employeeCode, employeeName } = rowResult;
+  rowResults.forEach(({ row, calculation, employeeCode, employeeName }) => {
     if (!employeeCode) return;
     const current = summaries.get(employeeCode) ?? {
       firstRow: row, employeeCode, employeeName,
       lateMinutes: 0, earlyInMinutes: 0, penalty: 0, earlyMinutes: 0, overtimeMinutes: 0,
-      workDayCount: 0, workedDayKeys: new Set(),
     };
     current.firstRow = Math.min(current.firstRow, row);
-    if (isWorkedDay(rowResult)) {
-      current.workedDayKeys.add(getWorkedDayKey(rowResult));
-      current.workDayCount = current.workedDayKeys.size;
-    }
     // Đi trễ và Về sớm là tổng bắt buộc; Đi sớm luôn bằng 0, Tăng ca dùng giá trị qua rule Diary.
     current.lateMinutes += Number(calculation.totalLateMinutes) || 0;
     current.earlyInMinutes += Number(calculation.validEarlyInMinutes) || 0;
@@ -54,10 +30,7 @@ export function buildEmployeeSummaries(rowResults) {
     }
     summaries.set(employeeCode, current);
   });
-  return Array.from(summaries.values()).map((summary) => ({
-    ...summary,
-    workedDayKeys: Array.from(summary.workedDayKeys ?? []),
-  }));
+  return Array.from(summaries.values());
 }
 
 /** Ghi hộp tổng hợp cạnh bảng và cảnh báo tháng cho VP khi vượt ba giờ đi trễ. */
@@ -70,16 +43,13 @@ export function writeEmployeeSummaryBox(
 ) {
   const row = summary.firstRow;
   const values = [
-    ["Nhân viên", summary.employeeName],
-    ["Tổng công", summary.workDayCount ?? 0],
-    ["Đi sớm", summary.earlyInMinutes],
+    ["Nhân viên", summary.employeeName], ["Đi sớm", summary.earlyInMinutes],
     ["Đi trễ", summary.lateMinutes], ["Phạt", summary.penalty],
     ["Về sớm", summary.earlyMinutes], ["Tăng ca", summary.overtimeMinutes],
   ];
   values.forEach((items, rowOffset) => items.forEach((value, columnOffset) => {
     const address = XLSX.utils.encode_cell({ r: row + rowOffset, c: startColumn + columnOffset });
-    const numberFormat = items[0] === "Phạt" && columnOffset === 1 ? "#,##0" : "0";
-    writeCalculatedCell(targetSheet, address, value, numberFormat);
+    writeCalculatedCell(targetSheet, address, value, rowOffset === 3 && columnOffset === 1 ? "#,##0" : "0");
     if (columnOffset === 0) {
       targetSheet[address].s = {
         ...(targetSheet[address].s ?? {}),

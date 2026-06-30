@@ -237,8 +237,6 @@ export async function mergeProcessedExcelResults(
         penalty: 0,
         earlyMinutes: 0,
         overtimeMinutes: 0,
-        workDayCount: 0,
-        workedDayKeys: [],
       };
       combined.firstRow = Math.min(
         combined.firstRow,
@@ -249,13 +247,6 @@ export async function mergeProcessedExcelResults(
       combined.penalty += Number(summary.penalty) || 0;
       combined.earlyMinutes += Number(summary.earlyMinutes) || 0;
       combined.overtimeMinutes += Number(summary.overtimeMinutes) || 0;
-      const workedDayKeys = new Set(combined.workedDayKeys ?? []);
-      (summary.workedDayKeys ?? []).forEach((dayKey) => {
-        if (dayKey) workedDayKeys.add(dayKey);
-      });
-      combined.workedDayKeys = Array.from(workedDayKeys);
-      combined.workDayCount = workedDayKeys.size ||
-        ((Number(combined.workDayCount) || 0) + (Number(summary.workDayCount) || 0));
       combinedSummaries.set(key, combined);
     });
   });
