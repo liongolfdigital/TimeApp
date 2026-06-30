@@ -247,7 +247,7 @@ assert.equal(updatedExisting.checkIn1, "08:00");
 assert.equal(updatedExisting.checkOut1, "17:30");
 assert.equal(updatedExisting.permissionStatus, "Có phép");
 assert.equal(updatedExisting.recordMaker, "Quản lý cũ");
-assert.deepEqual(updatedExisting.noteTypes, ["Đi trễ", "OFF"]);
+assert.deepEqual(updatedExisting.noteTypes, ["OFF"]);
 assert.equal(state.attachments.length, 1);
 
 const insertedId = state.rows.find(({ id }) => id !== existingId).id;
@@ -339,8 +339,8 @@ const manualExistingRow = manualRepositoryState.state.rows.find(
 const manuallyUpdated = await manualService.save({
   ...manuallyCreated,
   note: "Sửa thủ công",
-  noteTypes: ["Đi trễ", "OFF"],
+  noteTypes: ["Khác", "OFF", "Hỗ trợ CN"],
 }, { role: "Admin", branch: "" }, manualExistingRow);
-assert.deepEqual(manuallyUpdated.noteTypes, ["Đi trễ", "OFF"]);
+assert.deepEqual(manuallyUpdated.noteTypes, ["OFF"]);
 
 console.log("Diary batch import/upsert verification passed");

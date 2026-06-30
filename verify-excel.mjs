@@ -16,11 +16,14 @@ import {
   toggleDiarySelection,
 } from "./src/diary/diarySelection.js";
 import {
+  DIARY_NOTE_TYPES,
+  isDiaryNoteTypeDisabled,
   normalizeDiaryNoteTypes,
   normalizeDiaryViolationTypes,
   parseDiaryDisplayDate,
   sanitizeDiaryEntry,
   sortDiaryEntries,
+  toggleDiaryNoteType,
 } from "./src/diary/diaryModel.js";
 import {
   ensureClipboardImageFile,
@@ -1862,6 +1865,10 @@ assert.deepEqual(importedDiary[0].noteTypes, []);
 const diaryNoteTypesSheet = XLSX.utils.aoa_to_sheet([
   ["Mã N.Viên", "Tên N.Viên", "Ngày", "Vào 1", "Ra 1", "Ghi chú", "Loại ghi chú"],
   ["00005", "Nhân viên B", "18/07/2026", "8:05", "17:00", "Kẹt xe", "Đi trễ; Về sớm"],
+  ["00006", "Nhân viên C", "19/07/2026", "8:00", "17:00", "Nghỉ", "OFF, Đi trễ"],
+  ["00007", "Nhân viên D", "20/07/2026", "8:00", "17:00", "Đổi trạng thái", "Đi trễ, Đi sớm"],
+  ["00008", "Nhân viên E", "21/07/2026", "8:00", "17:00", "Đổi trạng thái", "Về sớm; Tăng ca"],
+  ["00009", "Nhân viên F", "22/07/2026", "8:00", "17:00", "Hỗ trợ", "Hỗ trợ CN, Tăng ca"],
 ]);
 const diaryNoteTypesWorkbook = XLSX.utils.book_new();
 XLSX.utils.book_append_sheet(diaryNoteTypesWorkbook, diaryNoteTypesSheet, "Dữ liệu");
@@ -1871,19 +1878,53 @@ const diaryNoteTypesFile = new File(
 );
 const importedDiaryNoteTypes = await importDiaryFromExcel(diaryNoteTypesFile);
 assert.deepEqual(importedDiaryNoteTypes[0].noteTypes, ["Đi trễ", "Về sớm"]);
+assert.deepEqual(importedDiaryNoteTypes[1].noteTypes, ["OFF"]);
+assert.deepEqual(importedDiaryNoteTypes[2].noteTypes, ["Đi sớm"]);
+assert.deepEqual(importedDiaryNoteTypes[3].noteTypes, ["Tăng ca"]);
+assert.deepEqual(importedDiaryNoteTypes[4].noteTypes, ["Hỗ trợ CN", "Tăng ca"]);
 
 assert.deepEqual(
   normalizeDiaryNoteTypes(["Đi trễ", "Không hợp lệ", "OFF", "Đi trễ"]),
-  ["Đi trễ", "OFF"],
+  ["OFF"],
 );
 assert.deepEqual(
   sanitizeDiaryEntry({ noteType: "Tăng ca; OFF" }).noteTypes,
-  ["Tăng ca", "OFF"],
+  ["OFF"],
 );
 assert.deepEqual(
   sanitizeDiaryEntry({ category: ["Đi sớm", "Về sớm"] }).noteTypes,
   ["Đi sớm", "Về sớm"],
 );
+assert.deepEqual(DIARY_NOTE_TYPES, [
+  "Đi sớm",
+  "Đi trễ",
+  "Về sớm",
+  "Tăng ca",
+  "OFF",
+  "Khác",
+  "Hỗ trợ CN",
+]);
+
+assert.deepEqual(toggleDiaryNoteType([], "OFF"), ["OFF"]);
+assert.equal(isDiaryNoteTypeDisabled(["OFF"], "Đi trễ"), true);
+assert.equal(isDiaryNoteTypeDisabled(["OFF"], "OFF"), false);
+assert.deepEqual(toggleDiaryNoteType(["OFF"], "OFF"), []);
+assert.deepEqual(toggleDiaryNoteType([], "Khác"), ["Khác"]);
+assert.deepEqual(toggleDiaryNoteType(["Đi trễ"], "Đi sớm"), ["Đi sớm"]);
+assert.deepEqual(toggleDiaryNoteType(["Đi sớm"], "Đi trễ"), ["Đi trễ"]);
+assert.deepEqual(toggleDiaryNoteType(["Về sớm"], "Tăng ca"), ["Tăng ca"]);
+assert.deepEqual(toggleDiaryNoteType(["Tăng ca"], "Về sớm"), ["Về sớm"]);
+assert.deepEqual(toggleDiaryNoteType(["Khác"], "Đi trễ"), ["Khác", "Đi trễ"]);
+assert.deepEqual(toggleDiaryNoteType(["Hỗ trợ CN"], "Tăng ca"), ["Hỗ trợ CN", "Tăng ca"]);
+assert.deepEqual(
+  toggleDiaryNoteType(["Khác", "Hỗ trợ CN", "Đi trễ"], "OFF"),
+  ["OFF"],
+);
+assert.deepEqual(normalizeDiaryNoteTypes("OFF, Đi trễ"), ["OFF"]);
+assert.deepEqual(normalizeDiaryNoteTypes("Đi trễ, Đi sớm"), ["Đi sớm"]);
+assert.deepEqual(normalizeDiaryNoteTypes("Đi sớm; Đi trễ"), ["Đi trễ"]);
+assert.deepEqual(normalizeDiaryNoteTypes("Về sớm, Tăng ca"), ["Tăng ca"]);
+assert.deepEqual(normalizeDiaryNoteTypes("Tăng ca; Về sớm"), ["Về sớm"]);
 
 const createdDiaryWithTypes = sanitizeDiaryEntry({
   date: "2026-07-19",
@@ -1895,9 +1936,9 @@ const createdDiaryWithTypes = sanitizeDiaryEntry({
 assert.deepEqual(createdDiaryWithTypes.noteTypes, ["Đi trễ", "Về sớm"]);
 const editedDiaryWithTypes = sanitizeDiaryEntry({
   ...createdDiaryWithTypes,
-  noteTypes: ["Đi trễ", "OFF"],
+  noteTypes: ["Đi trễ", "Về sớm", "Khác"],
 });
-assert.deepEqual(editedDiaryWithTypes.noteTypes, ["Đi trễ", "OFF"]);
+assert.deepEqual(editedDiaryWithTypes.noteTypes, ["Đi trễ", "Về sớm", "Khác"]);
 
 const diaryExportRows = buildDiaryExportRows([{
   ...editedDiaryWithTypes,
@@ -1919,7 +1960,7 @@ assert.deepEqual(diaryExportRows[0], [
   "Người lập biên bản",
   "File đính kèm",
 ]);
-assert.equal(diaryExportRows[1][9], "Đi trễ, OFF");
+assert.equal(diaryExportRows[1][9], "Đi trễ, Về sớm, Khác");
 
 const workbookWithoutSheet = XLSX.utils.book_new();
 XLSX.utils.book_append_sheet(workbookWithoutSheet, XLSX.utils.aoa_to_sheet([["Khác"]]), "Sheet1");

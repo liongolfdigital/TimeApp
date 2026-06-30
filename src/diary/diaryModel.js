@@ -8,6 +8,7 @@ export {
   DIARY_EXPORT_FILE_NAME,
   DIARY_FIELDS,
   DIARY_IMPORT_FIELDS,
+  DIARY_NOTE_TYPES,
   DIARY_NOTE_TYPE_OPTIONS,
   DIARY_REQUIRED_IMPORT_KEYS,
   DIARY_SHEET_NAME,
@@ -30,6 +31,7 @@ export {
   createDiaryId,
   formatDiaryNoteTypes,
   formatDiaryViolationTypes,
+  isDiaryNoteTypeDisabled,
   normalizeDiaryEmployeeCode,
   normalizeDiaryNoteType,
   normalizeDiaryNoteTypes,
@@ -38,6 +40,7 @@ export {
   normalizeDiaryViolationType,
   normalizeDiaryViolationTypes,
   sanitizeDiaryEntry,
+  toggleDiaryNoteType,
 } from "./diaryNormalizers.js";
 
 export { getDiaryIdentity, mergeDiaryEntries } from "./diaryMerge.js";

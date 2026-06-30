@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   createDiaryId,
-  DIARY_NOTE_TYPE_OPTIONS,
+  DIARY_NOTE_TYPES,
   EMPTY_DIARY_ENTRY,
+  isDiaryNoteTypeDisabled,
   normalizeDiaryNoteTypes,
   sanitizeDiaryEntry,
+  toggleDiaryNoteType,
 } from "../diary/diaryModel";
 import {
   findDiaryEmployeeByCode,
@@ -72,15 +74,10 @@ export default function DiaryForm({
   };
 
   const toggleNoteType = (type) => {
-    setFormData((current) => {
-      const selected = normalizeDiaryNoteTypes(current.noteTypes);
-      return {
-        ...current,
-        noteTypes: selected.includes(type)
-          ? selected.filter((item) => item !== type)
-          : [...selected, type],
-      };
-    });
+    setFormData((current) => ({
+      ...current,
+      noteTypes: toggleDiaryNoteType(current.noteTypes, type),
+    }));
   };
 
   const changeEmployeeCode = (value) => {
@@ -132,6 +129,7 @@ export default function DiaryForm({
       await onSave(
         sanitizeDiaryEntry({
           ...formData,
+          noteTypes: normalizeDiaryNoteTypes(formData.noteTypes),
           ...(fixedBranch ? { branch: fixedBranch } : {}),
           id: entry?.id || createDiaryId(),
         }),
@@ -195,11 +193,12 @@ export default function DiaryForm({
             <fieldset className="form-field form-field-wide diary-violation-field">
               <legend>Loại ghi chú</legend>
               <div className="diary-checkbox-grid">
-                {DIARY_NOTE_TYPE_OPTIONS.map((type) => {
+                {DIARY_NOTE_TYPES.map((type) => {
                   const checked = selectedNoteTypes.includes(type);
+                  const disabled = isDiaryNoteTypeDisabled(selectedNoteTypes, type);
                   return (
-                    <label className={`diary-checkbox-card ${checked ? "selected" : ""}`} key={type}>
-                      <input type="checkbox" checked={checked} onChange={() => toggleNoteType(type)} />
+                    <label className={`diary-checkbox-card ${checked ? "selected" : ""} ${disabled ? "disabled" : ""}`} key={type}>
+                      <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggleNoteType(type)} />
                       <span>{type}</span>
                     </label>
                   );

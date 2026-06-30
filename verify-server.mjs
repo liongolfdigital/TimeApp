@@ -142,7 +142,7 @@ try {
 
   const q7Diary = await api(managerSession.token, "/api/diary");
   assert.deepEqual(q7Diary.payload.map(({ id }) => id), ["diary-q7"]);
-  assert.deepEqual(q7Diary.payload[0].violationTypes, ["Đi trễ", "Tăng ca", "OFF"]);
+  assert.deepEqual(q7Diary.payload[0].violationTypes, ["OFF"]);
   const olDiary = await api(managerOl.token, "/api/diary");
   assert.deepEqual(olDiary.payload.map(({ id }) => id), ["diary-ol"]);
   assert.deepEqual(olDiary.payload[0].violationTypes, []);

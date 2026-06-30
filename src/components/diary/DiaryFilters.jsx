@@ -1,4 +1,4 @@
-import { DIARY_NOTE_TYPE_OPTIONS } from "../../diary/diaryModel";
+import { DIARY_NOTE_TYPES } from "../../diary/diaryModel";
 import { FilterIcon, SearchIcon } from "../Icons";
 
 export default function DiaryFilters({
@@ -43,7 +43,7 @@ export default function DiaryFilters({
       <fieldset className="diary-note-type-filter">
         <legend><FilterIcon size={15} /> Loại ghi chú</legend>
         <div>
-          {DIARY_NOTE_TYPE_OPTIONS.map((type) => (
+          {DIARY_NOTE_TYPES.map((type) => (
             <label className={noteTypeFilters.includes(type) ? "selected" : ""} key={type}>
               <input
                 type="checkbox"

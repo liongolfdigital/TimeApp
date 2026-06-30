@@ -3,14 +3,17 @@ export const DIARY_SHEET_NAME = "Diary";
 export const DIARY_EXPORT_FILE_NAME = "Diary.xlsx";
 
 // Giữ lại để dữ liệu Diary cũ và bộ máy đối chiếu chấm công tiếp tục hoạt động.
-export const DIARY_NOTE_TYPE_OPTIONS = Object.freeze([
+export const DIARY_NOTE_TYPES = Object.freeze([
   "Đi sớm",
   "Đi trễ",
   "Về sớm",
   "Tăng ca",
   "OFF",
+  "Khác",
+  "Hỗ trợ CN",
 ]);
-export const DIARY_VIOLATION_OPTIONS = DIARY_NOTE_TYPE_OPTIONS;
+export const DIARY_NOTE_TYPE_OPTIONS = DIARY_NOTE_TYPES;
+export const DIARY_VIOLATION_OPTIONS = DIARY_NOTE_TYPES;
 
 export const DIARY_IMPORT_FIELDS = Object.freeze([
   { key: "employeeCode", label: "Mã N.Viên", aliases: ["Mã nhân viên"] },

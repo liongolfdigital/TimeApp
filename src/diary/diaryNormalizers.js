@@ -1,5 +1,5 @@
 import { normalizeLookup, normalizeText } from "../employees/employeeModel.js";
-import { DIARY_NOTE_TYPE_OPTIONS } from "./diaryConstants.js";
+import { DIARY_NOTE_TYPES } from "./diaryConstants.js";
 import {
   getDiaryWeekday,
   normalizeDiaryDate,
@@ -23,7 +23,7 @@ function normalizeViolationKey(value) {
 }
 
 const DIARY_NOTE_TYPE_LOOKUP = new Map(
-  DIARY_NOTE_TYPE_OPTIONS.map((option) => [normalizeViolationKey(option), option]),
+  DIARY_NOTE_TYPES.map((option) => [normalizeViolationKey(option), option]),
 );
 const DIARY_VIOLATION_ALIASES = new Map([
   ["off > 2 ngay", "OFF"],
@@ -53,12 +53,51 @@ export function normalizeDiaryNoteTypes(value) {
       rawItems = text.split(/[;,|]+/);
     }
   }
-  return [...new Set(rawItems.map(normalizeDiaryNoteType).filter(Boolean))];
+  const normalizedItems = rawItems.map(normalizeDiaryNoteType).filter(Boolean);
+  if (normalizedItems.includes("OFF")) return ["OFF"];
+
+  const selected = new Set();
+  normalizedItems.forEach((type) => {
+    if (type === "Đi trễ") selected.delete("Đi sớm");
+    if (type === "Đi sớm") selected.delete("Đi trễ");
+    if (type === "Về sớm") selected.delete("Tăng ca");
+    if (type === "Tăng ca") selected.delete("Về sớm");
+
+    // Xóa rồi thêm lại để giá trị xuất hiện sau cùng trong input thắng xung đột.
+    selected.delete(type);
+    selected.add(type);
+  });
+  return [...selected];
 }
 
 export function formatDiaryNoteTypes(value, emptyText = "") {
   const types = normalizeDiaryNoteTypes(value);
   return types.length ? types.join(", ") : emptyText;
+}
+
+export function toggleDiaryNoteType(currentTypes, nextType) {
+  const selected = normalizeDiaryNoteTypes(currentTypes);
+  const normalizedType = normalizeDiaryNoteType(nextType);
+  if (!normalizedType) return selected;
+
+  if (normalizedType === "OFF") {
+    return selected.includes("OFF") ? [] : ["OFF"];
+  }
+
+  const withoutOff = selected.filter((type) => type !== "OFF");
+  if (withoutOff.includes(normalizedType)) {
+    return withoutOff.filter((type) => type !== normalizedType);
+  }
+  return normalizeDiaryNoteTypes([...withoutOff, normalizedType]);
+}
+
+export function isDiaryNoteTypeDisabled(currentTypes, type) {
+  const normalizedType = normalizeDiaryNoteType(type);
+  return Boolean(
+    normalizedType
+      && normalizedType !== "OFF"
+      && normalizeDiaryNoteTypes(currentTypes).includes("OFF"),
+  );
 }
 
 // Alias tương thích cho bộ xử lý chấm công và dữ liệu cũ.
