@@ -18,11 +18,7 @@ import {
   ABNORMAL_ATTENDANCE_NOTE,
   getAbnormalAttendance,
 } from "../services/attendance/abnormalAttendanceService.js";
-import {
-  createDiaryLookup,
-  findDiaryTimeEntry,
-  getDiaryReason,
-} from "../services/attendance/diaryReasonService.js";
+import { createDiaryLookup } from "../services/attendance/diaryReasonService.js";
 import {
   getVPSaturdayShiftAssignment,
   isVpEmployee,
@@ -46,61 +42,6 @@ import {
   resolveEmployeeBranch,
 } from "./processFilters.js";
 import { normalizeDiaryDate } from "../diary/diaryModel.js";
-import { timeValueToMinutes } from "../utils/timeUtils.js";
-
-
-const SHOP_CLOCK_SLOT_HEADERS = Object.freeze({
-  in1: "Vào 1 (Shop)",
-  out1: "Ra 1 (Shop)",
-  in2: "Vào 2 (Shop)",
-  out2: "Ra 2 (Shop)",
-});
-
-function getDiaryShopClockValues(entry = {}) {
-  return {
-    in1: entry.checkIn1 ?? "",
-    out1: entry.checkOut1 ?? "",
-    in2: entry.checkIn2 ?? "",
-    out2: entry.checkOut2 ?? "",
-  };
-}
-
-function hasShopClockValues(clockValues = {}) {
-  return Object.values(clockValues ?? {}).some((value) => Boolean(normalizeText(value)));
-}
-
-function mergeClockValuesWithShop(adjustedClockValues, shopClockValues = {}) {
-  return Object.fromEntries(
-    Object.entries(adjustedClockValues).map(([slot, value]) => [
-      slot,
-      normalizeText(shopClockValues[slot]) ? shopClockValues[slot] : value,
-    ]),
-  );
-}
-
-function writeDiaryShopClockCells({
-  XLSX,
-  targetSheet,
-  outputStartColumn,
-  targetRow,
-  shopClockValues = {},
-}) {
-  Object.entries(SHOP_CLOCK_SLOT_HEADERS).forEach(([slot, header]) => {
-    const targetColumn = outputStartColumn + KEPT_COLUMNS.indexOf(header);
-    if (targetColumn < outputStartColumn) return;
-    const value = shopClockValues[slot];
-    if (!normalizeText(value)) return;
-
-    const address = XLSX.utils.encode_cell({ r: targetRow, c: targetColumn });
-    const minutes = timeValueToMinutes(value);
-    writeCalculatedCell(
-      targetSheet,
-      address,
-      minutes === null ? value : minutes / (24 * 60),
-      minutes === null ? undefined : "hh:mm",
-    );
-  });
-}
 
 function getSourceCell(XLSX, sourceSheet, columnMap, row, header) {
   return getMappedSourceCell(XLSX, sourceSheet, columnMap, row, header);
@@ -291,31 +232,6 @@ export function processAttendanceSourceRow({
     adjustment: clockAdjustment,
   });
 
-  const diaryTimeMatch = findDiaryTimeEntry(diaryLookup, {
-    date: dateValue,
-    employeeCode,
-    employeeName: effectiveEmployeeName || employeeName,
-  });
-  const diaryShopClockValues = diaryTimeMatch
-    ? getDiaryShopClockValues(diaryTimeMatch.entry)
-    : null;
-  const hasDiaryShopClock = hasShopClockValues(diaryShopClockValues);
-  if (hasDiaryShopClock) {
-    writeDiaryShopClockCells({
-      XLSX,
-      targetSheet,
-      outputStartColumn,
-      targetRow: row,
-      shopClockValues: diaryShopClockValues,
-    });
-  }
-  const calculationClockValues = hasDiaryShopClock
-    ? mergeClockValuesWithShop(clockAdjustment.adjusted, diaryShopClockValues)
-    : clockAdjustment.adjusted;
-  const diaryShopNote = hasDiaryShopClock
-    ? `Diary: ${getDiaryReason(diaryTimeMatch.entry)}`
-    : "";
-
   const sourceNote = getCellDisplayValue(
     XLSX,
     getSourceCell(XLSX, sourceSheet, columnMap, sourceRow, "Ghi chú"),
@@ -323,9 +239,9 @@ export function processAttendanceSourceRow({
   const calculation = calculateTimekeeping({
     employee: registeredEmployee,
     employeeName,
-    clockValues: calculationClockValues,
+    clockValues: clockAdjustment.adjusted,
     fallbackTotal: getSourceCell(XLSX, sourceSheet, columnMap, sourceRow, "Tổng giờ")?.v,
-    additionalNotes: [...clockAdjustment.notes, sourceNote, diaryShopNote].filter(Boolean),
+    additionalNotes: [...clockAdjustment.notes, sourceNote].filter(Boolean),
     shiftAssignment,
     attendanceDate: dateValue,
   });
@@ -350,7 +266,7 @@ export function processAttendanceSourceRow({
   const isOff = Boolean(employeeKey) && Boolean(dayKey) &&
     isOffAttendanceDay(
       calculation.note,
-      calculationClockValues,
+      clockAdjustment.adjusted,
       calculation.totalWorkedMinutes,
     );
 
@@ -434,16 +350,11 @@ export function processAttendanceSourceRow({
       dateValue,
       dayKey,
       weekKey: getWeekKey(dateValue),
-      clockValues: calculationClockValues,
-      originalClockValues,
-      adjustedClockValues: clockAdjustment.adjusted,
-      shopClockValues: hasDiaryShopClock ? diaryShopClockValues : null,
-      hasDiaryShopClock,
-      diaryTimeMatchType: diaryTimeMatch?.matchType ?? null,
+      clockValues: originalClockValues,
       multiplePunches: abnormalAttendance.abnormal
         ? { slots: abnormalAttendance.slots }
         : null,
-      diaryMatched: diaryMatched || hasDiaryShopClock,
+      diaryMatched,
       diaryExempted,
     },
   };

@@ -43,27 +43,6 @@ export function findDiaryEntry(lookup, { date, employeeCode, employeeName }) {
   return nameEntry ? { entry: nameEntry, matchType: "employeeName" } : null;
 }
 
-
-function hasDiaryClockValues(entry) {
-  return [entry?.checkIn1, entry?.checkOut1, entry?.checkIn2, entry?.checkOut2]
-    .some((value) => Boolean(normalizeText(value)));
-}
-
-function getDiaryCandidatesByIdentity(lookup, { date, employeeCode, employeeName } = {}) {
-  const normalizedDate = normalizeDiaryDate(date);
-  if (!normalizedDate) return { candidates: [], matchType: null };
-  const code = normalizeDiaryEmployeeCode(employeeCode);
-  const codeMatches = code ? lookup.byCodeAndDate.get(`${normalizedDate}|${code}`) : null;
-  if (codeMatches?.length) return { candidates: codeMatches, matchType: "employeeCode" };
-
-  const name = normalizeLookup(employeeName);
-  const nameMatches = name ? lookup.byNameAndDate.get(`${normalizedDate}|${name}`) : null;
-  return {
-    candidates: nameMatches ?? [],
-    matchType: nameMatches?.length ? "employeeName" : null,
-  };
-}
-
 function diarySortTimestamp(entry) {
   const updated = normalizeDiaryTimestamp(entry?.updatedAt ?? entry?.updatedDate);
   const created = normalizeDiaryTimestamp(entry?.createdAt ?? entry?.createdDate);
@@ -97,20 +76,6 @@ export function findDiaryForViolation(lookup, {
     .sort((first, second) => diarySortTimestamp(second) - diarySortTimestamp(first));
   if (!matched.length) return null;
   return { entry: matched[0], matchType: code ? "employeeCode" : "employeeName" };
-}
-
-
-export function findDiaryTimeEntry(lookup, { date, employeeCode, employeeName } = {}) {
-  const { candidates, matchType } = getDiaryCandidatesByIdentity(lookup, {
-    date,
-    employeeCode,
-    employeeName,
-  });
-  const matched = candidates
-    .filter((entry) => hasDiaryClockValues(entry))
-    .sort((first, second) => diarySortTimestamp(second) - diarySortTimestamp(first));
-  if (!matched.length) return null;
-  return { entry: matched[0], matchType };
 }
 
 export function isDiaryPermitted(entry) {

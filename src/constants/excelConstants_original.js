@@ -6,21 +6,16 @@ export const SOURCE_SHEET_NAME = "Chi tiết";
 export const OUTPUT_FILE_NAME = "bang_cham_cong_da_xu_ly.xlsx";
 
 // Các cột nguồn được giữ nguyên và thứ tự chuẩn của sheet kết quả.
-export const SOURCE_CLOCK_COLUMNS = Object.freeze(["Vào 1", "Ra 1", "Vào 2", "Ra 2"]);
-export const SHOP_CLOCK_COLUMNS = Object.freeze([
-  "Vào 1 (Shop)",
-  "Ra 1 (Shop)",
-  "Vào 2 (Shop)",
-  "Ra 2 (Shop)",
-]);
 export const KEPT_COLUMNS = Object.freeze([
   "STT",
   "Mã N.Viên",
   "Tên N.Viên",
   "Ngày",
   "Thứ",
-  ...SOURCE_CLOCK_COLUMNS,
-  ...SHOP_CLOCK_COLUMNS,
+  "Vào 1",
+  "Ra 1",
+  "Vào 2",
+  "Ra 2",
   "Tổng giờ",
   "Giờ ĐK",
 ]);
@@ -37,7 +32,6 @@ export const OPTIONAL_SOURCE_COLUMNS = Object.freeze([
   "Giờ ĐK",
   "Vào 2",
   "Ra 2",
-  ...SHOP_CLOCK_COLUMNS,
   "TC1",
   "TC2",
   "TC3",

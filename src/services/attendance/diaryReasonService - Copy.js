@@ -1,17 +1,11 @@
 import {
   createDiaryLookup,
   findDiaryForViolation,
-  findDiaryTimeEntry,
   isDiaryPermitted,
 } from "../../diary/diaryModel.js";
 import { normalizeText } from "../../employees/employeeModel.js";
 
-export {
-  createDiaryLookup,
-  findDiaryForViolation,
-  findDiaryTimeEntry,
-  isDiaryPermitted,
-};
+export { createDiaryLookup, findDiaryForViolation, isDiaryPermitted };
 
 /** Lấy lý do Diary đã chuẩn hóa, dùng nhãn dự phòng khi bản ghi không có lý do. */
 export function getDiaryReason(entry) {

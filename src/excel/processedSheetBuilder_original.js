@@ -5,7 +5,6 @@
 import {
   KEPT_COLUMNS,
   OUTPUT_COLUMNS,
-  SHOP_CLOCK_COLUMNS,
 } from "../constants/excelConstants.js";
 import { normalizeEmployeeCode } from "../employees/employeeModel.js";
 import {
@@ -62,13 +61,10 @@ function writeOutputHeaders({
     });
 
     if (KEPT_COLUMNS.includes(header)) {
-      const isCalculatedKeptColumn = header === "Giờ ĐK" || SHOP_CLOCK_COLUMNS.includes(header);
-      const sourceCell = isCalculatedKeptColumn
+      const sourceCell = header === "Giờ ĐK"
         ? null
         : getSourceCell(XLSX, sourceSheet, columnMap, headerRow, header);
-      const styleSource = sourceCell
-        ?? getSourceCell(XLSX, sourceSheet, columnMap, headerRow, "Tổng giờ");
-      targetSheet[targetAddress] = cloneCell(styleSource) ?? { t: "s", v: header };
+      targetSheet[targetAddress] = cloneCell(sourceCell) ?? { t: "s", v: header };
       targetSheet[targetAddress].v = header;
       targetSheet[targetAddress].w = header;
       return;
@@ -134,7 +130,6 @@ function copySheetLayout({
 
   const sourceColumns = sourceSheet["!cols"] ?? [];
   targetSheet["!cols"] = KEPT_COLUMNS.map((header) => {
-    if (SHOP_CLOCK_COLUMNS.includes(header)) return { wch: 14 };
     const sourceColumn = columnMap.get(normalizeHeader(header));
     return sourceColumns[sourceColumn] ? structuredClone(sourceColumns[sourceColumn]) : undefined;
   });

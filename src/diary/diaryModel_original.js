@@ -50,7 +50,6 @@ export {
   createDiaryLookup,
   findDiaryEntry,
   findDiaryForViolation,
-  findDiaryTimeEntry,
   hasDiaryAttachments,
   isDiaryPermitted,
 } from "./diaryLookup.js";
