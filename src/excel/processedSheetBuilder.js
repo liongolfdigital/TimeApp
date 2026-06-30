@@ -271,6 +271,7 @@ export function createProcessedSheet({
     processedRowCount: rowResults.length,
     filteredOutRows,
     employeeSummaries,
+    employeeDetailRows: rowResults,
     processedEmployees: rowResults.map(({ employeeCode }) =>
       normalizeEmployeeCode(employeeCode) || employeeCode),
     processedRows: rowResults.map(({ employeeCode, employeeName, branch }) => ({

@@ -16,7 +16,6 @@ import {
   ENABLE_AUTO_COUNT_EARLY_OVER_60,
   ENABLE_AUTO_COUNT_OVERTIME_OVER_60,
 } from "./diaryViolationResolver.js";
-import { appendEmployeeAttendanceSheets } from "./employeeSheetsBuilder.js";
 import { makeOutputFileName } from "./excelFileNames.js";
 import {
   ATTENDANCE_COLOR_MAP,
@@ -95,7 +94,6 @@ export async function processExcelFile(
     processedRowCount,
     filteredOutRows,
     employeeSummaries,
-    employeeDetailRows,
     processedEmployees,
     processedRows,
     diaryRows,
@@ -120,7 +118,6 @@ export async function processExcelFile(
       sheetName,
     );
   });
-  appendEmployeeAttendanceSheets(XLSX, outputWorkbook, employeeDetailRows);
 
   normalizeDateCellsForStyledWrite(outputWorkbook);
   const outputBuffer = XLSX_STYLE.write(outputWorkbook, {
@@ -178,7 +175,6 @@ export async function processExcelFile(
       processedHeaderRow: headerRow,
       processedStartColumn: previewBounds.s.c,
       employeeSummaries,
-      employeeDetailRows,
     } : {}),
   };
 }

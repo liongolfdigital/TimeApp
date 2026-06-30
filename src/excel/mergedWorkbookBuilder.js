@@ -13,6 +13,7 @@ import {
   normalizeLookup,
   normalizeText,
 } from "../employees/employeeModel.js";
+import { appendEmployeeAttendanceSheets } from "./employeeSheetsBuilder.js";
 import { makeMergedOutputFileName } from "./excelFileNames.js";
 import { writeEmployeeSummaryBox } from "./excelSummaryService.js";
 import {
@@ -165,6 +166,7 @@ export async function mergeProcessedExcelResults(
   const firstRowsByEmployee = new Map();
   const combinedSummaries = new Map();
   const exportedEmployeeKeys = new Set();
+  const mergedEmployeeDetailRows = [];
 
   availableResults.forEach((result) => {
     for (let offset = 0; offset < result.totalRows; offset += 1) {
@@ -260,6 +262,10 @@ export async function mergeProcessedExcelResults(
         ((Number(combined.workDayCount) || 0) + (Number(summary.workDayCount) || 0));
       combinedSummaries.set(key, combined);
     });
+
+    (result.employeeDetailRows ?? []).forEach((rowResult) => {
+      mergedEmployeeDetailRows.push(rowResult);
+    });
   });
 
   const missingEmployees = selectedEmployeeReports.filter(
@@ -302,6 +308,7 @@ export async function mergeProcessedExcelResults(
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, mergedSheet, MERGED_SHEET_NAME);
+  appendEmployeeAttendanceSheets(XLSX, workbook, mergedEmployeeDetailRows);
   appendMissingEmployeesSheet(XLSX, workbook, missingEmployees);
   normalizeDateCellsForStyledWrite(workbook);
   const outputBuffer = XLSX_STYLE.write(workbook, {

@@ -45,7 +45,7 @@ import {
   matchesProcessFilters,
   resolveEmployeeBranch,
 } from "./processFilters.js";
-import { normalizeDiaryDate } from "../diary/diaryModel.js";
+import { findDiaryEntry, normalizeDiaryDate } from "../diary/diaryModel.js";
 import { timeValueToMinutes } from "../utils/timeUtils.js";
 
 
@@ -315,6 +315,13 @@ export function processAttendanceSourceRow({
     employeeCode,
     employeeName: effectiveEmployeeName || employeeName,
   });
+  const diaryNoteMatch = findDiaryEntry(diaryLookup, {
+    date: dateValue,
+    employeeCode,
+    employeeName: effectiveEmployeeName || employeeName,
+  });
+  const diaryNoteEntry = diaryNoteMatch?.entry ?? diaryTimeMatch?.entry;
+  const diaryNote = normalizeText(diaryNoteEntry?.note ?? diaryNoteEntry?.reason);
   const diaryShopClockValues = diaryTimeMatch
     ? getDiaryShopClockValues(diaryTimeMatch.entry)
     : null;
@@ -456,6 +463,8 @@ export function processAttendanceSourceRow({
       effectiveEmployeeName,
       dateValue,
       dayKey,
+      weekdayText: getCellDisplayValue(XLSX, weekdayCell),
+      diaryNote,
       weekKey: getWeekKey(dateValue),
       clockValues: calculationClockValues,
       originalClockValues,
