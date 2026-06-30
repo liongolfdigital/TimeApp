@@ -51,17 +51,27 @@ function hasDiaryClockValues(entry) {
 
 function getDiaryCandidatesByIdentity(lookup, { date, employeeCode, employeeName } = {}) {
   const normalizedDate = normalizeDiaryDate(date);
-  if (!normalizedDate) return { candidates: [], matchType: null };
+  if (!normalizedDate) return [];
+  const seen = new Set();
+  const candidates = [];
+  const pushMatches = (matches = [], matchType) => {
+    matches.forEach((entry) => {
+      const key = entry.id || `${entry.date}|${entry.employeeCode}|${entry.employeeName}|${entry.createdAt}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      candidates.push({ entry, matchType });
+    });
+  };
+
   const code = normalizeDiaryEmployeeCode(employeeCode);
   const codeMatches = code ? lookup.byCodeAndDate.get(`${normalizedDate}|${code}`) : null;
-  if (codeMatches?.length) return { candidates: codeMatches, matchType: "employeeCode" };
+  pushMatches(codeMatches ?? [], "employeeCode");
 
   const name = normalizeLookup(employeeName);
   const nameMatches = name ? lookup.byNameAndDate.get(`${normalizedDate}|${name}`) : null;
-  return {
-    candidates: nameMatches ?? [],
-    matchType: nameMatches?.length ? "employeeName" : null,
-  };
+  pushMatches(nameMatches ?? [], "employeeName");
+
+  return candidates;
 }
 
 function diarySortTimestamp(entry) {
@@ -101,16 +111,15 @@ export function findDiaryForViolation(lookup, {
 
 
 export function findDiaryTimeEntry(lookup, { date, employeeCode, employeeName } = {}) {
-  const { candidates, matchType } = getDiaryCandidatesByIdentity(lookup, {
+  const matched = getDiaryCandidatesByIdentity(lookup, {
     date,
     employeeCode,
     employeeName,
-  });
-  const matched = candidates
-    .filter((entry) => hasDiaryClockValues(entry))
-    .sort((first, second) => diarySortTimestamp(second) - diarySortTimestamp(first));
+  })
+    .filter(({ entry }) => hasDiaryClockValues(entry))
+    .sort((first, second) => diarySortTimestamp(second.entry) - diarySortTimestamp(first.entry));
   if (!matched.length) return null;
-  return { entry: matched[0], matchType };
+  return matched[0];
 }
 
 export function isDiaryPermitted(entry) {

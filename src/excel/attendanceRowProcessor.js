@@ -69,13 +69,32 @@ function hasShopClockValues(clockValues = {}) {
   return Object.values(clockValues ?? {}).some((value) => Boolean(normalizeText(value)));
 }
 
-function mergeClockValuesWithShop(adjustedClockValues, shopClockValues = {}) {
+function makeShopClockValuesForCalculation(shopClockValues = {}) {
   return Object.fromEntries(
-    Object.entries(adjustedClockValues).map(([slot, value]) => [
+    Object.keys(SHOP_CLOCK_SLOT_HEADERS).map((slot) => [
       slot,
-      normalizeText(shopClockValues[slot]) ? shopClockValues[slot] : value,
+      normalizeText(shopClockValues[slot]) ? shopClockValues[slot] : null,
     ]),
   );
+}
+
+function calculateClockPairMinutes(startValue, endValue) {
+  const start = timeValueToMinutes(startValue);
+  const end = timeValueToMinutes(endValue);
+  if (start === null || end === null) return null;
+  const normalizedEnd = end < start ? end + 24 * 60 : end;
+  return Math.max(0, Math.round(normalizedEnd - start));
+}
+
+function calculateTotalHoursFromShopClock(clockValues = {}) {
+  const durations = [
+    calculateClockPairMinutes(clockValues.in1, clockValues.out1),
+    calculateClockPairMinutes(clockValues.in2, clockValues.out2),
+  ].filter((value) => value !== null);
+
+  if (!durations.length) return null;
+  const totalMinutes = durations.reduce((total, minutes) => total + minutes, 0);
+  return totalMinutes / 60;
 }
 
 function writeDiaryShopClockCells({
@@ -310,8 +329,11 @@ export function processAttendanceSourceRow({
     });
   }
   const calculationClockValues = hasDiaryShopClock
-    ? mergeClockValuesWithShop(clockAdjustment.adjusted, diaryShopClockValues)
+    ? makeShopClockValuesForCalculation(diaryShopClockValues)
     : clockAdjustment.adjusted;
+  const shopTotalHours = hasDiaryShopClock
+    ? calculateTotalHoursFromShopClock(calculationClockValues)
+    : null;
   const diaryShopNote = hasDiaryShopClock
     ? `Diary: ${getDiaryReason(diaryTimeMatch.entry)}`
     : "";
@@ -320,11 +342,12 @@ export function processAttendanceSourceRow({
     XLSX,
     getSourceCell(XLSX, sourceSheet, columnMap, sourceRow, "Ghi chú"),
   );
+  const sourceTotalHours = getSourceCell(XLSX, sourceSheet, columnMap, sourceRow, "Tổng giờ")?.v;
   const calculation = calculateTimekeeping({
     employee: registeredEmployee,
     employeeName,
     clockValues: calculationClockValues,
-    fallbackTotal: getSourceCell(XLSX, sourceSheet, columnMap, sourceRow, "Tổng giờ")?.v,
+    fallbackTotal: hasDiaryShopClock ? shopTotalHours : sourceTotalHours,
     additionalNotes: [...clockAdjustment.notes, sourceNote, diaryShopNote].filter(Boolean),
     shiftAssignment,
     attendanceDate: dateValue,

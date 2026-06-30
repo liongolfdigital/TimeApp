@@ -7,7 +7,6 @@ import {
   getDiaryReason,
   isDiaryPermitted,
 } from "../services/attendance/diaryReasonService.js";
-import { normalizeDiaryViolationTypes } from "../diary/diaryNormalizers.js";
 
 const VIOLATION_TYPES = [
   {
@@ -35,12 +34,13 @@ const VIOLATION_TYPES = [
   },
 ];
 
-// Hai flag giữ nguyên rule cũ cho Đi sớm; riêng Tăng ca tuyệt đối không tự cộng tổng.
+// Hai flag giữ nguyên rule cũ để có thể bật lại mà không phục hồi code.
+export const ENABLE_AUTO_COUNT_OVERTIME_OVER_60 = false;
 export const ENABLE_AUTO_COUNT_EARLY_OVER_60 = false;
 
 function shouldAutoCountOver60(violationKey, minutes) {
   if (minutes <= 60) return false;
-  if (violationKey === "overtime") return false;
+  if (violationKey === "overtime") return ENABLE_AUTO_COUNT_OVERTIME_OVER_60;
   if (violationKey === "earlyIn") return ENABLE_AUTO_COUNT_EARLY_OVER_60;
   return false;
 }
@@ -89,6 +89,9 @@ export function applyDiaryViolations({
     if (minutes <= 0) return;
     const isOfficeOvertime = employeeGroup === "VP" && config.key === "overtime";
     const isAutoTotalViolation = shouldAutoCountOver60(config.key, minutes);
+    const isFullDayOvertime = config.key === "overtime" &&
+      Boolean(calculation.isFullDayByMorningToAfternoon);
+
     const diaryMatch = findDiaryForViolation(diaryLookup, {
       date: dateValue,
       employeeCode,
@@ -97,20 +100,18 @@ export function applyDiaryViolations({
     });
     const previousPenalty = calculation.penalty;
     let status = "missingDiary";
-    let hasTypedDiaryMatch = false;
 
     if (diaryMatch) {
       diaryMatched = true;
       const permitted = isDiaryPermitted(diaryMatch.entry);
-      hasTypedDiaryMatch = normalizeDiaryViolationTypes(
-        diaryMatch.entry.noteTypes ?? diaryMatch.entry.violationTypes,
-      ).includes(config.type);
       status = permitted ? "permitted" : "notPermitted";
       if (permitted && !isOfficeOvertime) diaryExempted = true;
       const diaryReason = getDiaryReason(diaryMatch.entry);
       const diaryNotePrefix = isOfficeOvertime
         ? "Tăng ca VP không tính tổng"
-        : `${config.type} ${permitted ? "có phép" : "không phép"}`;
+        : isFullDayOvertime && !permitted
+          ? "Tăng ca làm full ngày sáng - chiều"
+          : `${config.type} ${permitted ? "có phép" : "không phép"}`;
       calculation.note = appendNote(
         calculation.note,
         diaryReason ? `${diaryNotePrefix}: ${diaryReason}` : diaryNotePrefix,
@@ -120,8 +121,8 @@ export function applyDiaryViolations({
         calculation.note,
         isOfficeOvertime
           ? "Tăng ca VP không tính tổng"
-          : config.key === "overtime"
-            ? "Tăng ca chưa có Diary phép - không cộng tổng"
+          : isFullDayOvertime
+            ? "Tăng ca làm full ngày sáng - chiều"
             : isAutoTotalViolation
               ? `${config.type} trên 60 phút - tự tính tổng`
               : `${config.type} chưa có Diary`,
@@ -129,9 +130,11 @@ export function applyDiaryViolations({
     }
 
     calculation.violationStatuses[config.key] =
-      isAutoTotalViolation && !diaryMatch
-        ? "autoTotal"
-        : status;
+      isFullDayOvertime && !diaryMatch
+        ? "fullDay"
+        : isAutoTotalViolation && !diaryMatch
+          ? "autoTotal"
+          : status;
     if (config.key === "late") {
       if (status === "permitted") {
         calculation.penalty = 0;
@@ -145,10 +148,7 @@ export function applyDiaryViolations({
     } else if (isOfficeOvertime) {
       // VP vẫn hiển thị/tô màu Tăng ca theo ngày, nhưng tuyệt đối không cộng vào tổng.
       calculation.validOvertimeMinutes = 0;
-    } else if (config.key === "overtime") {
-      // Tắt toàn bộ cơ chế tự cộng tổng tăng ca. Chỉ Diary loại Tăng ca + Có phép mới được cộng.
-      calculation.validOvertimeMinutes = status === "permitted" && hasTypedDiaryMatch ? minutes : 0;
-    } else if (isAutoTotalViolation) {
+    } else if (isAutoTotalViolation || isFullDayOvertime) {
       calculation[config.validField] = minutes;
     } else {
       calculation[config.validField] = status === "permitted" ? minutes : 0;
