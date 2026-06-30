@@ -72,6 +72,25 @@ function getEmployeeName(rowResult = {}) {
   return normalizeText(rowResult.employeeName || rowResult.effectiveEmployeeName) || "Nhân viên";
 }
 
+function getSummaryKey(summary = {}) {
+  return normalizeEmployeeCode(summary.employeeCode) || normalizeLookup(summary.employeeName);
+}
+
+function buildSummaryMap(employeeSummaries = []) {
+  const map = new Map();
+  (employeeSummaries ?? []).forEach((summary) => {
+    const key = getSummaryKey(summary);
+    if (key) map.set(key, summary);
+  });
+  return map;
+}
+
+function getSummaryForEmployee(summaryMap, group = {}) {
+  return summaryMap.get(group.key) ||
+    summaryMap.get(normalizeEmployeeCode(group.employeeCode)) ||
+    summaryMap.get(normalizeLookup(group.employeeName));
+}
+
 function sanitizeSheetName(name) {
   const cleaned = normalizeText(name)
     .replace(INVALID_SHEET_NAME_CHARS, " ")
@@ -135,6 +154,8 @@ function makeEmployeeGroups(rowResults = []) {
     const key = getEmployeeKey(rowResult);
     if (!key) return;
     const current = groups.get(key) ?? {
+      key,
+      employeeCode: normalizeEmployeeCode(rowResult.employeeCode),
       employeeName: getEmployeeName(rowResult),
       rows: [],
     };
@@ -173,7 +194,24 @@ function writeNumberCell(sheet, XLSX, row, column, value) {
   writeCalculatedCell(sheet, address, Number(value) || 0, "0");
 }
 
-function buildEmployeeSheetSummary(rows = [], { employeeName = "", reportMonthKey = "" } = {}) {
+function buildEmployeeSheetSummary(
+  rows = [],
+  { employeeName = "", reportMonthKey = "", sourceSummary = null } = {},
+) {
+  // Ưu tiên dùng đúng số liệu đã ghi ở Summary box của sheet Chi tiết/Tổng hợp.
+  // Như vậy các cột tổng trong sheet nhân viên luôn khớp 1:1 với Summary box.
+  if (sourceSummary) {
+    return {
+      earlyInMinutes: Number(sourceSummary.earlyInMinutes) || 0,
+      lateMinutes: Number(sourceSummary.lateMinutes) || 0,
+      earlyMinutes: Number(sourceSummary.earlyMinutes) || 0,
+      overtimeMinutes: isVpEmployee(employeeName) ? 0 : Number(sourceSummary.overtimeMinutes) || 0,
+      otherDeductionMinutes: Number(sourceSummary.otherDeductionMinutes) || 0,
+      workDayCount: Number(sourceSummary.workDayCount) || 0,
+      workedDayKeys: new Set(sourceSummary.workedDayKeys ?? []),
+    };
+  }
+
   const summary = {
     earlyInMinutes: 0,
     lateMinutes: 0,
@@ -185,7 +223,7 @@ function buildEmployeeSheetSummary(rows = [], { employeeName = "", reportMonthKe
   };
 
   rows.forEach((rowResult) => {
-    // Summary của sheet nhân viên chỉ tính tháng báo cáo; dữ liệu tháng trước vẫn hiện để đối chiếu.
+    // Fallback khi không truyền Summary box: vẫn chỉ tính tháng báo cáo.
     if (!isInReportMonth(rowResult, reportMonthKey)) return;
     const calculation = rowResult.calculation ?? {};
     summary.earlyInMinutes += Number(calculation.validEarlyInMinutes) || 0;
@@ -203,6 +241,7 @@ function buildEmployeeSheetSummary(rows = [], { employeeName = "", reportMonthKe
 
   return summary;
 }
+
 
 function writeEmployeeSheetRows({ XLSX, sheet, rows, reportMonthKey }) {
   rows.forEach((rowResult, index) => {
@@ -277,7 +316,7 @@ function writeEmployeeSummaryRow({ XLSX, sheet, row, summary }) {
   });
 }
 
-function createEmployeeSheet(XLSX, { employeeName, monthLabel, reportMonthKey, rows }) {
+function createEmployeeSheet(XLSX, { employeeName, monthLabel, reportMonthKey, rows, sourceSummary }) {
   const sheet = {};
   const lastColumn = EMPLOYEE_ATTENDANCE_HEADERS.length - 1;
 
@@ -310,7 +349,7 @@ function createEmployeeSheet(XLSX, { employeeName, monthLabel, reportMonthKey, r
   });
 
   writeEmployeeSheetRows({ XLSX, sheet, rows, reportMonthKey });
-  const summary = buildEmployeeSheetSummary(rows, { employeeName, reportMonthKey });
+  const summary = buildEmployeeSheetSummary(rows, { employeeName, reportMonthKey, sourceSummary });
   const dataEndRow = Math.max(2, rows.length + 2);
   const summaryRow = dataEndRow + 1;
   writeEmployeeSummaryRow({ XLSX, sheet, row: summaryRow, summary });
@@ -351,17 +390,19 @@ function createEmployeeSheet(XLSX, { employeeName, monthLabel, reportMonthKey, r
 }
 
 /** Append các sheet từng nhân viên vào workbook đang xuất. */
-export function appendEmployeeAttendanceSheets(XLSX, workbook, rowResults = []) {
+export function appendEmployeeAttendanceSheets(XLSX, workbook, rowResults = [], employeeSummaries = []) {
   const reportMonthKey = getReportMonthKey(rowResults);
   const monthLabel = formatMonthTitle(reportMonthKey);
   if (!monthLabel) return;
 
+  const summaryMap = buildSummaryMap(employeeSummaries);
   makeEmployeeGroups(rowResults).forEach((group) => {
     const sheet = createEmployeeSheet(XLSX, {
       employeeName: group.employeeName,
       monthLabel,
       reportMonthKey,
       rows: group.rows,
+      sourceSummary: getSummaryForEmployee(summaryMap, group),
     });
     XLSX.utils.book_append_sheet(
       workbook,

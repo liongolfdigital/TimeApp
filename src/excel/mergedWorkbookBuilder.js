@@ -308,7 +308,12 @@ export async function mergeProcessedExcelResults(
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, mergedSheet, MERGED_SHEET_NAME);
-  appendEmployeeAttendanceSheets(XLSX, workbook, mergedEmployeeDetailRows);
+  appendEmployeeAttendanceSheets(
+    XLSX,
+    workbook,
+    mergedEmployeeDetailRows,
+    Array.from(combinedSummaries.values()),
+  );
   appendMissingEmployeesSheet(XLSX, workbook, missingEmployees);
   normalizeDateCellsForStyledWrite(workbook);
   const outputBuffer = XLSX_STYLE.write(workbook, {

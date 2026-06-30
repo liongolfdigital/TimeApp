@@ -120,7 +120,7 @@ export async function processExcelFile(
       sheetName,
     );
   });
-  appendEmployeeAttendanceSheets(XLSX, outputWorkbook, employeeDetailRows);
+  appendEmployeeAttendanceSheets(XLSX, outputWorkbook, employeeDetailRows, employeeSummaries);
 
   normalizeDateCellsForStyledWrite(outputWorkbook);
   const outputBuffer = XLSX_STYLE.write(outputWorkbook, {
