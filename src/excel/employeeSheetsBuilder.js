@@ -14,12 +14,12 @@ export const EMPLOYEE_ATTENDANCE_HEADERS = Object.freeze([
   "Ra 1",
   "Vào 2",
   "Ra 2",
+  "Ngày Công",
+  "Tăng ca",
   "Đi sớm",
   "Đi trễ",
   "Về sớm",
-  "Tăng ca",
   "Trừ khác",
-  "Ngày Công",
   "Ghi chú",
 ]);
 
@@ -211,12 +211,12 @@ export function buildEmployeeAttendanceRowValues(rowResult, reportMonthKey = "")
     getEffectiveClockValue(rowResult, "out1"),
     getEffectiveClockValue(rowResult, "in2"),
     getEffectiveClockValue(rowResult, "out2"),
+    getDisplayWorkDay(rowResult, reportMonthKey),
+    Number(calculation.overtimeMinutes) || 0,
     Number(calculation.earlyInMinutes) || 0,
     Number(calculation.lateMinutes) || 0,
     Number(calculation.earlyMinutes) || 0,
-    Number(calculation.overtimeMinutes) || 0,
     Number(calculation.otherDeductionMinutes) || 0,
-    getDisplayWorkDay(rowResult, reportMonthKey),
     rowResult.diaryNote ?? "",
   ];
 }
@@ -324,12 +324,12 @@ function writeEmployeeSummaryRow({ XLSX, sheet, row, summary }) {
     "",
     "",
     "",
+    Number(summary.workDayCount) || 0,
+    Number(summary.overtimeMinutes) || 0,
     Number(summary.earlyInMinutes) || 0,
     Number(summary.lateMinutes) || 0,
     Number(summary.earlyMinutes) || 0,
-    Number(summary.overtimeMinutes) || 0,
     Number(summary.otherDeductionMinutes) || 0,
-    Number(summary.workDayCount) || 0,
     "",
   ];
   const summaryStyle = {
@@ -400,12 +400,12 @@ function createEmployeeSheet(XLSX, { employeeName, monthLabel, reportMonthKey, r
     { wch: 10 },
     { wch: 10 },
     { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
     { wch: 11 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
     { wch: 42 },
   ];
   sheet["!rows"] = [
