@@ -91,7 +91,7 @@ function getSummaryForEmployee(summaryMap, group = {}) {
     summaryMap.get(normalizeLookup(group.employeeName));
 }
 
-function sanitizeSheetName(name) {
+export function sanitizeSheetName(name) {
   const cleaned = normalizeText(name)
     .replace(INVALID_SHEET_NAME_CHARS, " ")
     .replace(/\s+/g, " ")
@@ -194,6 +194,60 @@ function writeNumberCell(sheet, XLSX, row, column, value) {
   writeCalculatedCell(sheet, address, Number(value) || 0, "0");
 }
 
+export function makeEmployeeAttendanceFileBaseName(employeeName) {
+  return sanitizeSheetName(employeeName)
+    .replace(/\.+$/g, "")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .trim() || "Nhan_vien";
+}
+
+export function buildEmployeeAttendanceRowValues(rowResult, reportMonthKey = "") {
+  const calculation = rowResult.calculation ?? {};
+  return [
+    formatDayKey(rowResult.dayKey, rowResult.dateValue),
+    rowResult.weekdayText ?? "",
+    getEffectiveClockValue(rowResult, "in1"),
+    getEffectiveClockValue(rowResult, "out1"),
+    getEffectiveClockValue(rowResult, "in2"),
+    getEffectiveClockValue(rowResult, "out2"),
+    Number(calculation.earlyInMinutes) || 0,
+    Number(calculation.lateMinutes) || 0,
+    Number(calculation.earlyMinutes) || 0,
+    Number(calculation.overtimeMinutes) || 0,
+    Number(calculation.otherDeductionMinutes) || 0,
+    getDisplayWorkDay(rowResult, reportMonthKey),
+    rowResult.diaryNote ?? "",
+  ];
+}
+
+export function buildEmployeeAttendanceReports(rowResults = [], employeeSummaries = []) {
+  const reportMonthKey = getReportMonthKey(rowResults);
+  const monthLabel = formatMonthTitle(reportMonthKey);
+  if (!monthLabel) return [];
+
+  const summaryMap = buildSummaryMap(employeeSummaries);
+  return makeEmployeeGroups(rowResults).map((group) => {
+    const sourceSummary = getSummaryForEmployee(summaryMap, group);
+    const summary = buildEmployeeSheetSummary(group.rows, {
+      employeeName: group.employeeName,
+      reportMonthKey,
+      sourceSummary,
+    });
+    return {
+      key: group.key,
+      employeeCode: group.employeeCode,
+      employeeName: group.employeeName,
+      monthLabel,
+      reportMonthKey,
+      rows: group.rows,
+      summary,
+      values: group.rows.map((rowResult) =>
+        buildEmployeeAttendanceRowValues(rowResult, reportMonthKey)),
+    };
+  });
+}
+
 function buildEmployeeSheetSummary(
   rows = [],
   { employeeName = "", reportMonthKey = "", sourceSummary = null } = {},
@@ -246,22 +300,7 @@ function buildEmployeeSheetSummary(
 function writeEmployeeSheetRows({ XLSX, sheet, rows, reportMonthKey }) {
   rows.forEach((rowResult, index) => {
     const row = index + 3;
-    const calculation = rowResult.calculation ?? {};
-    const values = [
-      formatDayKey(rowResult.dayKey, rowResult.dateValue),
-      rowResult.weekdayText ?? "",
-      getEffectiveClockValue(rowResult, "in1"),
-      getEffectiveClockValue(rowResult, "out1"),
-      getEffectiveClockValue(rowResult, "in2"),
-      getEffectiveClockValue(rowResult, "out2"),
-      Number(calculation.earlyInMinutes) || 0,
-      Number(calculation.lateMinutes) || 0,
-      Number(calculation.earlyMinutes) || 0,
-      Number(calculation.overtimeMinutes) || 0,
-      Number(calculation.otherDeductionMinutes) || 0,
-      getDisplayWorkDay(rowResult, reportMonthKey),
-      rowResult.diaryNote ?? "",
-    ];
+    const values = buildEmployeeAttendanceRowValues(rowResult, reportMonthKey);
 
     values.forEach((value, column) => {
       if (column >= 2 && column <= 5) {
@@ -395,19 +434,18 @@ export function appendEmployeeAttendanceSheets(XLSX, workbook, rowResults = [], 
   const monthLabel = formatMonthTitle(reportMonthKey);
   if (!monthLabel) return;
 
-  const summaryMap = buildSummaryMap(employeeSummaries);
-  makeEmployeeGroups(rowResults).forEach((group) => {
+  buildEmployeeAttendanceReports(rowResults, employeeSummaries).forEach((report) => {
     const sheet = createEmployeeSheet(XLSX, {
-      employeeName: group.employeeName,
+      employeeName: report.employeeName,
       monthLabel,
       reportMonthKey,
-      rows: group.rows,
-      sourceSummary: getSummaryForEmployee(summaryMap, group),
+      rows: report.rows,
+      sourceSummary: report.summary,
     });
     XLSX.utils.book_append_sheet(
       workbook,
       sheet,
-      makeUniqueSheetName(workbook, group.employeeName),
+      makeUniqueSheetName(workbook, report.employeeName),
     );
   });
 }

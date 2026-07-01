@@ -114,6 +114,8 @@ export function applyDiaryViolations({
     if (minutes <= 0) return;
     const isOfficeOvertime = employeeGroup === "VP" && config.key === "overtime";
     const isAutoTotalViolation = shouldAutoCountOver60(config.key, minutes);
+    const isFullDayOvertime = config.key === "overtime" &&
+      Boolean(calculation.isFullDayByMorningToAfternoon);
     const diaryMatch = findDiaryForViolation(diaryLookup, {
       date: dateValue,
       employeeCode,
@@ -146,7 +148,9 @@ export function applyDiaryViolations({
         ? `Trừ khác (${config.type})`
         : isOfficeOvertime
           ? "Tăng ca VP không tính tổng"
-          : `${config.type} ${permitted ? "có phép" : "không phép"}`;
+          : isFullDayOvertime && !permitted
+            ? "Tăng ca làm full ngày sáng - chiều"
+            : `${config.type} ${permitted ? "có phép" : "không phép"}`;
       calculation.note = appendNote(
         calculation.note,
         diaryReason ? `${diaryNotePrefix}: ${diaryReason}` : diaryNotePrefix,
@@ -156,9 +160,11 @@ export function applyDiaryViolations({
         calculation.note,
         isOfficeOvertime
           ? "Tăng ca VP không tính tổng"
-          : config.key === "overtime"
-            ? "Tăng ca chưa có Diary phép - không cộng tổng"
-            : isAutoTotalViolation
+          : isFullDayOvertime
+            ? "Tăng ca làm full ngày sáng - chiều"
+            : config.key === "overtime"
+              ? "Tăng ca chưa có Diary phép - không cộng tổng"
+              : isAutoTotalViolation
               ? `${config.type} trên 60 phút - tự tính tổng`
               : `${config.type} chưa có Diary`,
       );
@@ -166,9 +172,11 @@ export function applyDiaryViolations({
 
     calculation.violationStatuses[config.key] = isOtherDeduction
       ? "otherDeduction"
-      : isAutoTotalViolation && !diaryMatch
-        ? "autoTotal"
-        : status;
+      : isFullDayOvertime && !diaryMatch
+        ? "fullDay"
+        : isAutoTotalViolation && !diaryMatch
+          ? "autoTotal"
+          : status;
 
     if (config.key === "late") {
       if (isOtherDeduction) {
@@ -181,8 +189,8 @@ export function applyDiaryViolations({
         calculation.penalty = 0;
       }
     } else if (config.key === "earlyIn") {
-      // Đi sớm chỉ hiển thị/audit và lấy lý do Diary, không cộng Tổng đi sớm.
-      calculation.validEarlyInMinutes = 0;
+      // Đi sớm có phép phải được cộng vào Summary; không phép/chưa có Diary chỉ hiển thị audit.
+      calculation.validEarlyInMinutes = status === "permitted" && hasTypedDiaryMatch ? minutes : 0;
     } else if (config.key === "early") {
       if (isOtherDeduction) {
         calculation.otherDeductionMinutes += minutes;

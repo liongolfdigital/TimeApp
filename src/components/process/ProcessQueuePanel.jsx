@@ -67,6 +67,7 @@ export default function ProcessQueuePanel({
                 <small>
                   {(item.processedMeta || item.resultFile).totalRows} dòng đã xử lý
                   {(item.processedMeta || item.resultFile).filteredOutRows ? ` · ${(item.processedMeta || item.resultFile).filteredOutRows} dòng không khớp đã bỏ qua` : ""}
+                  {(item.processedMeta || item.resultFile).pdfCount ? ` · ${(item.processedMeta || item.resultFile).pdfCount} PDF nhân viên` : ""}
                 </small>
               )}
             </div>
@@ -79,7 +80,7 @@ export default function ProcessQueuePanel({
             <div className="process-file-actions">
               {item.resultFile && (
                 <button className="button button-secondary" type="button" onClick={() => downloadProcessedFile(item.resultFile.blob, item.resultFile.fileName)}>
-                  <DownloadIcon size={16} /> Tải kết quả
+                  <DownloadIcon size={16} /> Tải gói kết quả
                 </button>
               )}
               <button className="icon-button" type="button" disabled={isProcessing} title="Xóa file" aria-label={`Xóa ${item.name}`} onClick={() => onRemove(item.id)}>
@@ -108,12 +109,12 @@ export default function ProcessQueuePanel({
               {mergedResult.selectedEmployeeCount
                 ? ` · ${mergedResult.exportedEmployeeCount}/${mergedResult.selectedEmployeeCount} nhân viên có dữ liệu · ${mergedResult.missingEmployeeCount} không tìm thấy`
                 : ` · ${mergedResult.exportedEmployeeCount} nhân viên có dữ liệu`}
-              {" "}· Có cột “Chi nhánh”, “Nguồn file”
+              {" "}· Có Excel và PDF nhân viên trong thư mục ZIP
             </span>
-            <small>{mergedResult.fileName}</small>
+            <small>{mergedResult.fileName}{mergedResult.pdfCount ? ` · ${mergedResult.pdfCount} PDF nhân viên` : ""}</small>
           </div>
           <button className="button button-dark" type="button" onClick={() => downloadProcessedFile(mergedResult.blob, mergedResult.fileName)}>
-            <DownloadIcon size={17} /> Tải file tổng hợp
+            <DownloadIcon size={17} /> Tải gói tổng hợp
           </button>
         </div>
       )}
@@ -122,7 +123,7 @@ export default function ProcessQueuePanel({
         <span>
           File gốc luôn được giữ nguyên. {exportMode === "merged"
             ? hasActiveFilters ? "Kết quả tổng hợp chỉ gồm dữ liệu khớp bộ lọc." : "Kết quả tổng hợp gồm dữ liệu từ tất cả file."
-            : <>Kết quả riêng dùng hậu tố <strong>_processed.xlsx</strong>.</>}
+            : <>Kết quả riêng tải về dạng <strong>ZIP</strong>, bên trong có file Excel và thư mục PDF nhân viên.</>}
         </span>
         <div>
           {exportMode === "separate" && successfulFiles.length > 1 && (

@@ -14,6 +14,7 @@ import {
   normalizeText,
 } from "../employees/employeeModel.js";
 import { appendEmployeeAttendanceSheets } from "./employeeSheetsBuilder.js";
+import { buildAttendanceExportPackage } from "./exportPackageBuilder.js";
 import { makeMergedOutputFileName } from "./excelFileNames.js";
 import { writeEmployeeSummaryBox } from "./excelSummaryService.js";
 import {
@@ -325,14 +326,26 @@ export async function mergeProcessedExcelResults(
     cellStyles: true,
     compression: true,
   });
+  const excelFileName = fileName || makeMergedOutputFileName(processFilters, {
+    rowResults: mergedEmployeeDetailRows,
+    branchNames: mergedBranchNames,
+  });
+  const excelBlob = new Blob([outputBuffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const exportPackage = await buildAttendanceExportPackage({
+    excelBlob,
+    excelFileName,
+    employeeDetailRows: mergedEmployeeDetailRows,
+    employeeSummaries: Array.from(combinedSummaries.values()),
+  });
   return {
-    blob: new Blob([outputBuffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }),
-    fileName: fileName || makeMergedOutputFileName(processFilters, {
-      rowResults: mergedEmployeeDetailRows,
-      branchNames: mergedBranchNames,
-    }),
+    blob: exportPackage.blob,
+    fileName: exportPackage.fileName,
+    excelBlob,
+    excelFileName,
+    exportFolderName: exportPackage.folderName,
+    pdfCount: exportPackage.pdfCount,
     totalRows,
     sourceFileCount: availableResults.length,
     headers: mergedHeaders,

@@ -37,7 +37,6 @@ export function makePreview(
     if (!previewRow.some(Boolean)) continue;
     rows.push(previewRow);
     previewHighlights.push(OUTPUT_COLUMNS.map((header) => {
-      if (highlight?.missingClock) return HIGHLIGHT_TYPES.missingClock;
       if (
         ["Vào 1", "Ra 1", "Vào 2", "Ra 2"].includes(header)
         && highlight?.multiplePunches?.slots?.includes(
@@ -46,6 +45,7 @@ export function makePreview(
               : header === "Vào 2" ? "in2" : "out2",
         )
       ) return HIGHLIGHT_TYPES.multiplePunches;
+      if (highlight?.missingClock) return HIGHLIGHT_TYPES.missingClock;
       if (header === "Ghi chú" && highlight?.longOff) {
         return makeViolationPreviewClass(HIGHLIGHT_TYPES.off, highlight.longOffStatus);
       }

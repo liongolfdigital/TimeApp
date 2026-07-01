@@ -62,6 +62,21 @@ import { isThuDucEmployee } from "./src/services/attendance/thuDucRuleService.js
 
 const time = (hours, minutes = 0) => (hours * 60 + minutes) / (24 * 60);
 
+function getResultExcelBlob(result) {
+  return result?.excelBlob ?? result?.blob;
+}
+
+async function readWorkbookFromResult(result, options = {}) {
+  const excelBlob = getResultExcelBlob(result);
+  return XLSX.read(await excelBlob.arrayBuffer(), options);
+}
+
+async function readStyledWorkbookFromResult(result, options = {}) {
+  const excelBlob = getResultExcelBlob(result);
+  return XLSX_STYLE.read(await excelBlob.arrayBuffer(), options);
+}
+
+
 let selectedDiaryIds = toggleDiarySelection([], "diary-1");
 assert.deepEqual(selectedDiaryIds, ["diary-1"]);
 assert.equal(getDiaryBulkDeleteLabel(selectedDiaryIds.length), "Xóa đã chọn (1)");
@@ -463,17 +478,18 @@ const selectedMergedResult = await mergeProcessedExcelResults(selectedMergedPart
   fileName: "merged-employees.xlsx",
   selectedEmployees: mergedTestEmployees.slice(0, 3),
 });
-assert.equal(selectedMergedResult.fileName, "merged-employees.xlsx");
+assert.equal(selectedMergedResult.fileName, "merged-employees.zip");
+assert.equal(selectedMergedResult.excelFileName, "merged-employees.xlsx");
 assert.equal(selectedMergedResult.totalRows, 3);
 assert.equal(selectedMergedResult.sourceFileCount, 3);
 assert.equal(selectedMergedResult.selectedEmployeeCount, 3);
 assert.equal(selectedMergedResult.exportedEmployeeCount, 3);
 assert.equal(selectedMergedResult.missingEmployeeCount, 0);
-const selectedMergedWorkbook = XLSX_STYLE.read(await selectedMergedResult.blob.arrayBuffer(), {
+const selectedMergedWorkbook = await readStyledWorkbookFromResult(selectedMergedResult, {
   type: "array",
   cellStyles: true,
 });
-assert.deepEqual(selectedMergedWorkbook.SheetNames, [MERGED_SHEET_NAME]);
+assert.ok(selectedMergedWorkbook.SheetNames.includes(MERGED_SHEET_NAME));
 const selectedMergedRows = XLSX.utils.sheet_to_json(
   selectedMergedWorkbook.Sheets[MERGED_SHEET_NAME],
   { defval: "" },
@@ -517,7 +533,7 @@ const q7MergedResult = await mergeProcessedExcelResults(q7MergedParts, {
   processFilters: q7MergedFilters,
 });
 assert.equal(q7MergedResult.totalRows, 1);
-const q7MergedWorkbook = XLSX.read(await q7MergedResult.blob.arrayBuffer(), { type: "array" });
+const q7MergedWorkbook = await readWorkbookFromResult(q7MergedResult, { type: "array" });
 const q7MergedRows = XLSX.utils.sheet_to_json(q7MergedWorkbook.Sheets[MERGED_SHEET_NAME], { defval: "" });
 assert.deepEqual(q7MergedRows.filter((row) => row["Mã N.Viên"]).map((row) => normalizeEmployeeCode(row["Mã N.Viên"])), ["00679"]);
 
@@ -537,8 +553,9 @@ assert.equal(missingSelectedEmployeeResult.sourceFileCount, 2);
 assert.equal(missingSelectedEmployeeResult.exportedEmployeeCount, 2);
 assert.equal(missingSelectedEmployeeResult.missingEmployeeCount, 1);
 assert.deepEqual(missingSelectedEmployeeResult.missingEmployees.map((employee) => employee.employeeCode), ["00403"]);
-const missingSelectedWorkbook = XLSX.read(await missingSelectedEmployeeResult.blob.arrayBuffer(), { type: "array" });
-assert.deepEqual(missingSelectedWorkbook.SheetNames, [MERGED_SHEET_NAME, MISSING_EMPLOYEE_SHEET_NAME]);
+const missingSelectedWorkbook = await readWorkbookFromResult(missingSelectedEmployeeResult, { type: "array" });
+assert.ok(missingSelectedWorkbook.SheetNames.includes(MERGED_SHEET_NAME));
+assert.ok(missingSelectedWorkbook.SheetNames.includes(MISSING_EMPLOYEE_SHEET_NAME));
 const missingSelectedRows = XLSX.utils.sheet_to_json(
   missingSelectedWorkbook.Sheets[MISSING_EMPLOYEE_SHEET_NAME],
   { defval: "" },
@@ -562,12 +579,12 @@ await assert.rejects(
   /Không có dữ liệu nào khớp bộ lọc đã chọn/,
 );
 assert.equal(
-  makeMergedOutputFileName({ employeeIds: ["00024"] }, new Date(2026, 5, 22, 9, 5)),
-  "XuLy_TongHop_NhanVien_20260622_0905.xlsx",
+  makeMergedOutputFileName({ employeeIds: ["00024"] }, { now: new Date(2026, 5, 22, 9, 5) }),
+  "2026-06-Tong_hop.xlsx",
 );
 assert.equal(
-  makeMergedOutputFileName({ branches: ["Q7"] }, new Date(2026, 5, 22, 9, 5)),
-  "XuLy_TongHop_ChiNhanh_20260622_0905.xlsx",
+  makeMergedOutputFileName({ branches: ["Q7"] }, { now: new Date(2026, 5, 22, 9, 5) }),
+  "2026-06-Q7.xlsx",
 );
 
 assert.equal(result.determinedShifts[0].shift, "Sáng");
@@ -591,48 +608,49 @@ assert.equal(result.determinedShifts[4].shift, "VP Ca 1");
 assert.equal(result.determinedShifts[4].source, "rule");
 assert.equal(result.determinedShifts[4].totalWorkedMinutes, 240);
 
-const outputWorkbook = XLSX.read(await result.blob.arrayBuffer(), { cellDates: false, cellNF: true });
+const outputWorkbook = await readWorkbookFromResult(result, { cellDates: false, cellNF: true });
 const outputSheet = outputWorkbook.Sheets["Chi tiết"];
 const outputHeaders = XLSX.utils.sheet_to_json(outputSheet, { header: 1 })[0];
 
 assert.deepEqual(outputHeaders, [
   "STT", "Mã N.Viên", "Tên N.Viên", "Ngày", "Thứ",
-  "Vào 1", "Ra 1", "Vào 2", "Ra 2", "Tổng giờ",
-  "Giờ ĐK", "Đi sớm", "Đi trễ", "Phạt", "Về sớm", "Tăng ca", "Ghi chú", "Tổng làm",
-  "Nhân viên", "Tổng",
+  "Vào 1", "Ra 1", "Vào 2", "Ra 2",
+  "Vào 1 (Shop)", "Ra 1 (Shop)", "Vào 2 (Shop)", "Ra 2 (Shop)",
+  "Tổng giờ", "Giờ ĐK", "Đi sớm", "Đi trễ", "Phạt", "Về sớm", "Tăng ca", "Trừ khác",
+  "Ghi chú", "Tổng làm", "Nhân viên", "Tổng",
 ]);
-assert.equal(outputSheet.L2.v, 0);
-assert.equal(outputSheet.M2.v, 5);
-assert.equal(outputSheet.N2.v, 0);
 assert.equal(outputSheet.P2.v, 0);
-assert.match(outputSheet.Q2.v, /Đi trễ chưa có Diary/);
-assert.doesNotMatch(outputSheet.Q2.v, /Tăng ca/);
-assert.equal(outputSheet.L3.v, 0);
-assert.equal(outputSheet.M3.v, 5);
-assert.equal(outputSheet.N3.v, 0);
-assert.equal(outputSheet.L4.v, 0);
-assert.equal(outputSheet.M4.v, 5);
-assert.equal(outputSheet.P5.v, 25);
-assert.equal(outputSheet.M6.v, 5);
-assert.equal(XLSX.utils.format_cell(outputSheet.R6), "04:00");
-assert.match(outputSheet.Q6.v, /Ghi chú nền/);
+assert.equal(outputSheet.Q2.v, 5);
+assert.equal(outputSheet.R2.v, 0);
+assert.equal(outputSheet.T2.v, 0);
+assert.match(outputSheet.V2.v, /Đi trễ chưa có Diary/);
+assert.doesNotMatch(outputSheet.V2.v, /Tăng ca/);
+assert.equal(outputSheet.P3.v, 0);
+assert.equal(outputSheet.Q3.v, 5);
+assert.equal(outputSheet.R3.v, 0);
+assert.equal(outputSheet.P4.v, 0);
+assert.equal(outputSheet.Q4.v, 5);
+assert.equal(outputSheet.T5.v, 25);
+assert.equal(outputSheet.Q6.v, 5);
+assert.equal(XLSX.utils.format_cell(outputSheet.W6), "04:00");
+assert.match(outputSheet.V6.v, /Ghi chú nền/);
 
 const vpOutOnlyFile = makeAttendanceFile([
   [1, "VP1", "VP-Hoa", new Date(2026, 5, 20), "T7", "", time(13, 0), "", "", time(4, 0), 0.5, 0, 0, 0, 0.5, ""],
 ]);
 const vpOutOnlyResult = await processExcelFile(vpOutOnlyFile, employees);
 assert.equal(vpOutOnlyResult.determinedShifts[0].shift, "VP Ca 2");
-assert.match(vpOutOnlyResult.previewRows[0][16], /Thiếu giờ vào/);
+assert.match(vpOutOnlyResult.previewRows[0][21], /Thiếu giờ vào/);
 assert.equal(vpOutOnlyResult.highlights[0].missingClock, true);
-assert.equal(vpOutOnlyResult.previewHighlights[0][16], "missingClock");
+assert.equal(vpOutOnlyResult.previewHighlights[0][21], "missingClock");
 
 const vpMissingClockFile = makeAttendanceFile([
   [1, "VP1", "VP-Hoa", new Date(2026, 5, 20), "T7", "", "", "", "", "", 0.5, 0, 0, 0, 0.5, ""],
 ]);
 const vpMissingClockResult = await processExcelFile(vpMissingClockFile, employees);
 assert.equal(vpMissingClockResult.determinedShifts[0].shift, "VP Ca 1");
-assert.match(vpMissingClockResult.previewRows[0][16], /Thiếu giờ vào/);
-assert.match(vpMissingClockResult.previewRows[0][16], /Thiếu giờ ra/);
+assert.match(vpMissingClockResult.previewRows[0][21], /Thiếu giờ vào/);
+assert.match(vpMissingClockResult.previewRows[0][21], /Thiếu giờ ra/);
 
 const diaryResult = await processExcelFile(branchRuleFile, employees, {
   diaryEntries: [
@@ -647,12 +665,12 @@ const diaryResult = await processExcelFile(branchRuleFile, employees, {
     },
   ],
 });
-const diaryWorkbook = XLSX.read(await diaryResult.blob.arrayBuffer(), { cellNF: true });
+const diaryWorkbook = await readWorkbookFromResult(diaryResult, { cellNF: true });
 const diarySheet = diaryWorkbook.Sheets["Chi tiết"];
-assert.equal(diarySheet.M2.v, 5);
-assert.equal(diarySheet.N2.v, 0);
-assert.match(diarySheet.Q2.v, /Đi trễ có phép: Đi khám bệnh/);
-assert.doesNotMatch(diarySheet.Q2.v, /Tăng ca/);
+assert.equal(diarySheet.Q2.v, 5);
+assert.equal(diarySheet.R2.v, 0);
+assert.match(diarySheet.V2.v, /Đi trễ có phép: Đi khám bệnh/);
+assert.doesNotMatch(diarySheet.V2.v, /Tăng ca/);
 assert.equal(diaryResult.diaryMatchedRows, 1);
 assert.equal(diaryResult.diaryExemptedRows, 1);
 
@@ -711,35 +729,35 @@ const q7MondayFile = makeAttendanceFile([
   [5, "Q7BEP2", "Bep-Rule", new Date(2026, 5, 15), "Hai", time(9, 7), time(21, 0), "", "", time(11, 53), 1, 0, 0, 0, 1, ""],
 ], "q7_monday_rule.xlsx");
 const q7MondayResult = await processExcelFile(q7MondayFile, q7MondayEmployees);
-const q7MondayWorkbook = XLSX.read(await q7MondayResult.blob.arrayBuffer(), { cellNF: true });
+const q7MondayWorkbook = await readWorkbookFromResult(q7MondayResult, { cellNF: true });
 const q7MondaySheet = q7MondayWorkbook.Sheets["Chi tiết"];
 
 assert.equal(q7MondayResult.determinedShifts[0].shift, "Sáng");
 assert.equal(q7MondayResult.determinedShifts[0].standardOutTime, "21:00");
-assert.equal(q7MondaySheet.M2.v, 7);
-assert.equal(q7MondaySheet.O2.v, 90);
-assert.equal(q7MondaySheet.P2.v, 0);
-assert.match(q7MondaySheet.Q2.v, /Về sớm do Giờ ĐK vượt giờ hoạt động Q7 Thứ 2: 90 phút/);
+assert.equal(q7MondaySheet.Q2.v, 7);
+assert.equal(q7MondaySheet.S2.v, 90);
+assert.equal(q7MondaySheet.T2.v, 0);
+assert.match(q7MondaySheet.V2.v, /Về sớm do Giờ ĐK vượt giờ hoạt động Q7 Thứ 2: 90 phút/);
 
 assert.equal(q7MondayResult.determinedShifts[1].standardOutTime, "21:00");
-assert.equal(q7MondaySheet.M3.v, 3);
-assert.equal(q7MondaySheet.O3.v, 0);
-assert.equal(q7MondaySheet.P3.v, 0);
+assert.equal(q7MondaySheet.Q3.v, 3);
+assert.equal(q7MondaySheet.S3.v, 0);
+assert.equal(q7MondaySheet.T3.v, 0);
 
 assert.equal(q7MondayResult.determinedShifts[2].standardOutTime, "17:00");
-assert.equal(q7MondaySheet.L4.v, 1);
-assert.equal(q7MondaySheet.O4.v, 0);
-assert.equal(q7MondaySheet.P4.v, 4);
+assert.equal(q7MondaySheet.P4.v, 1);
+assert.equal(q7MondaySheet.S4.v, 0);
+assert.equal(q7MondaySheet.T4.v, 4);
 
 assert.equal(q7MondayResult.determinedShifts[3].standardOutTime, "19:00");
-assert.equal(q7MondaySheet.L5.v, 11);
-assert.equal(q7MondaySheet.O5.v, 0);
-assert.equal(q7MondaySheet.P5.v, 9);
+assert.equal(q7MondaySheet.P5.v, 11);
+assert.equal(q7MondaySheet.S5.v, 0);
+assert.equal(q7MondaySheet.T5.v, 9);
 
 assert.equal(q7MondayResult.determinedShifts[4].standardOutTime, "16:30");
-assert.equal(q7MondaySheet.M6.v, 97);
-assert.equal(q7MondaySheet.O6.v, 0);
-assert.doesNotMatch(q7MondaySheet.Q6.v, /Q7 Thứ 2/);
+assert.equal(q7MondaySheet.Q6.v, 97);
+assert.equal(q7MondaySheet.S6.v, 0);
+assert.doesNotMatch(q7MondaySheet.V6.v, /Q7 Thứ 2/);
 
 const multiplePunchEmployee = {
   id: "multiple-punch",
@@ -761,17 +779,17 @@ const multiplePunchFile = makeAttendanceFile([
   [3, "MP1", "Multiple Punch", new Date(2026, 9, 3), "T7", "", "", time(12, 44), time(21, 20), time(8, 36), 1, 0, 0, 0, 1, ""],
 ], "multiple_punch_cases.xlsx");
 const multiplePunchResult = await processExcelFile(multiplePunchFile, [multiplePunchEmployee]);
-const multiplePunchWorkbook = XLSX.read(await multiplePunchResult.blob.arrayBuffer(), { cellNF: true });
+const multiplePunchWorkbook = await readWorkbookFromResult(multiplePunchResult, { cellNF: true });
 const multiplePunchSheet = multiplePunchWorkbook.Sheets["Chi tiết"];
-assert.match(multiplePunchSheet.Q2.v, /Mốc chấm công bất thường, cần kiểm tra/);
+assert.match(multiplePunchSheet.V2.v, /Mốc chấm công bất thường, cần kiểm tra/);
 assert.deepEqual(multiplePunchResult.highlights[0].multiplePunches.slots, ["in1", "out1", "in2", "out2"]);
 assert.equal(multiplePunchResult.previewHighlights[0][5], "multiplePunches");
 assert.equal(multiplePunchResult.previewHighlights[0][6], "multiplePunches");
 assert.equal(multiplePunchResult.previewHighlights[0][7], "multiplePunches");
 assert.equal(multiplePunchResult.previewHighlights[0][8], "multiplePunches");
-assert.doesNotMatch(multiplePunchSheet.Q3.v, /Mốc chấm công bất thường/);
+assert.doesNotMatch(multiplePunchSheet.V3.v, /Mốc chấm công bất thường/);
 assert.equal(multiplePunchResult.highlights[1].multiplePunches, null);
-assert.match(multiplePunchSheet.Q4.v, /Mốc chấm công bất thường, cần kiểm tra/);
+assert.match(multiplePunchSheet.V4.v, /Mốc chấm công bất thường, cần kiểm tra/);
 assert.deepEqual(multiplePunchResult.highlights[2].multiplePunches.slots, ["in2", "out2"]);
 assert.equal(multiplePunchResult.previewHighlights[2][7], "multiplePunches");
 assert.equal(multiplePunchResult.previewHighlights[2][8], "multiplePunches");
@@ -807,14 +825,14 @@ const tdTienResult = await processExcelFile(tdTienFile, [tdTienEmployee]);
 assert.equal(tdTienResult.determinedShifts[0].shift, "Chiều");
 assert.equal(tdTienResult.determinedShifts[0].source, "nearest");
 assert.equal(tdTienResult.determinedShifts[0].standardOutTime, "16:00");
-const tdTienWorkbook = XLSX.read(await tdTienResult.blob.arrayBuffer(), { cellNF: true });
+const tdTienWorkbook = await readWorkbookFromResult(tdTienResult, { cellNF: true });
 const tdTienSheet = tdTienWorkbook.Sheets["Chi tiết"];
-assert.equal(tdTienSheet.L2.v, 3);
-assert.equal(tdTienSheet.M2.v, 0);
-assert.equal(tdTienSheet.P2.v, 122);
-assert.match(tdTienSheet.Q2.v, /Đi sớm chưa có Diary/);
-assert.match(tdTienSheet.Q2.v, /Tăng ca chưa có Diary/);
-assert.doesNotMatch(tdTienSheet.Q2.v, /trên 60 phút - tự tính tổng/);
+assert.equal(tdTienSheet.P2.v, 3);
+assert.equal(tdTienSheet.Q2.v, 0);
+assert.equal(tdTienSheet.T2.v, 122);
+assert.match(tdTienSheet.V2.v, /Đi sớm chưa có Diary/);
+assert.match(tdTienSheet.V2.v, /Tăng ca chưa có Diary/);
+assert.doesNotMatch(tdTienSheet.V2.v, /trên 60 phút - tự tính tổng/);
 
 const tdUyenNhiEmployee = {
   id: "td-uyen-nhi",
@@ -857,10 +875,7 @@ const tdThreeShiftResult = await processExcelFile(tdThreeShiftFile, [tdUyenNhiEm
     violationTypes: ["Tăng ca"],
   }],
 });
-const tdThreeShiftWorkbook = XLSX.read(
-  await tdThreeShiftResult.blob.arrayBuffer(),
-  { cellNF: true },
-);
+const tdThreeShiftWorkbook = await readWorkbookFromResult(tdThreeShiftResult, { cellNF: true });
 const tdThreeShiftSheet = tdThreeShiftWorkbook.Sheets["Chi tiết"];
 
 assert.deepEqual(
@@ -873,21 +888,21 @@ assert.deepEqual(
   [false, false, false, false, false],
 );
 assert.deepEqual(
-  ["L2", "L3", "L4", "L5", "L6"].map((address) => tdThreeShiftSheet[address].v),
+  ["P2", "P3", "P4", "P5", "P6"].map((address) => tdThreeShiftSheet[address].v),
   [12, 15, 33, 2, 20],
 );
 assert.deepEqual(
-  ["P2", "P3", "P4", "P5", "P6"].map((address) => tdThreeShiftSheet[address].v),
+  ["T2", "T3", "T4", "T5", "T6"].map((address) => tdThreeShiftSheet[address].v),
   [2, 3, 0, 5, 1],
 );
-["Q2", "Q3", "Q4", "Q5", "Q6"].forEach((address) => {
+["V2", "V3", "V4", "V5", "V6"].forEach((address) => {
   assert.doesNotMatch(tdThreeShiftSheet[address].v, /full ngày|full ngày sáng - chiều/i);
 });
-assert.match(tdThreeShiftSheet.Q2.v, /Tăng ca có phép: hoàn tất bàn giao/);
-assert.match(tdThreeShiftSheet.Q3.v, /Tăng ca 3 phút/);
+assert.match(tdThreeShiftSheet.V2.v, /Tăng ca có phép: hoàn tất bàn giao/);
+assert.match(tdThreeShiftSheet.V3.v, /Tăng ca 3 phút/);
 assert.equal(tdThreeShiftResult.highlights[0].violationStatuses.overtime, "permitted");
 assert.equal(tdThreeShiftResult.highlights[1].violationStatuses.overtime, "missingDiary");
-assert.equal(tdThreeShiftSheet.T7.v, 2);
+assert.equal(tdThreeShiftSheet.Y8.v, 2);
 
 const overtimeRuleEmployee = {
   id: "overtime-rule",
@@ -931,29 +946,29 @@ const overtimeRuleResult = await processExcelFile(overtimeRuleFile, [overtimeRul
     },
   ],
 });
-const overtimeRuleWorkbook = XLSX.read(await overtimeRuleResult.blob.arrayBuffer(), { cellNF: true });
+const overtimeRuleWorkbook = await readWorkbookFromResult(overtimeRuleResult, { cellNF: true });
 const overtimeRuleSheet = overtimeRuleWorkbook.Sheets["Chi tiết"];
-assert.equal(overtimeRuleSheet.P2.v, 90);
-assert.match(overtimeRuleSheet.Q2.v, /Tăng ca chưa có Diary/);
-assert.doesNotMatch(overtimeRuleSheet.Q2.v, /trên 60 phút - tự tính tổng/);
+assert.equal(overtimeRuleSheet.T2.v, 90);
+assert.match(overtimeRuleSheet.V2.v, /Tăng ca chưa có Diary/);
+assert.doesNotMatch(overtimeRuleSheet.V2.v, /trên 60 phút - tự tính tổng/);
 assert.equal(overtimeRuleResult.highlights[0].violationStatuses.overtime, "missingDiary");
-assert.equal(overtimeRuleResult.previewHighlights[0][15], "overtime preview-status-missingDiary");
+assert.equal(overtimeRuleResult.previewHighlights[0][19], "overtime preview-status-missingDiary");
 
-assert.equal(overtimeRuleSheet.P3.v, 45);
-assert.match(overtimeRuleSheet.Q3.v, /Tăng ca chưa có Diary/);
+assert.equal(overtimeRuleSheet.T3.v, 45);
+assert.match(overtimeRuleSheet.V3.v, /Tăng ca chưa có Diary/);
 assert.equal(overtimeRuleResult.highlights[1].violationStatuses.overtime, "missingDiary");
-assert.equal(overtimeRuleResult.previewHighlights[1][15], "overtime preview-status-missingDiary");
+assert.equal(overtimeRuleResult.previewHighlights[1][19], "overtime preview-status-missingDiary");
 
-assert.equal(overtimeRuleSheet.P4.v, 90);
-assert.match(overtimeRuleSheet.Q4.v, /Tăng ca có phép: nhập hàng/);
+assert.equal(overtimeRuleSheet.T4.v, 90);
+assert.match(overtimeRuleSheet.V4.v, /Tăng ca có phép: nhập hàng/);
 assert.equal(overtimeRuleResult.highlights[2].violationStatuses.overtime, "permitted");
-assert.equal(overtimeRuleResult.previewHighlights[2][15], "overtime preview-status-permitted");
+assert.equal(overtimeRuleResult.previewHighlights[2][19], "overtime preview-status-permitted");
 
-assert.equal(overtimeRuleSheet.P5.v, 90);
-assert.match(overtimeRuleSheet.Q5.v, /Tăng ca không phép: tự ý ở lại/);
+assert.equal(overtimeRuleSheet.T5.v, 90);
+assert.match(overtimeRuleSheet.V5.v, /Tăng ca không phép: tự ý ở lại/);
 assert.equal(overtimeRuleResult.highlights[3].violationStatuses.overtime, "notPermitted");
-assert.equal(overtimeRuleResult.previewHighlights[3][15], "overtime preview-status-notPermitted");
-assert.equal(overtimeRuleSheet.T7.v, 90);
+assert.equal(overtimeRuleResult.previewHighlights[3][19], "overtime preview-status-notPermitted");
+assert.equal(overtimeRuleSheet.Y8.v, 90);
 assert.equal(overtimeRuleResult.diaryMatchedRows, 2);
 assert.equal(overtimeRuleResult.diaryExemptedRows, 1);
 
@@ -997,30 +1012,30 @@ const earlyInRuleResult = await processExcelFile(earlyInRuleFile, [earlyInRuleEm
     },
   ],
 });
-const earlyInRuleWorkbook = XLSX.read(await earlyInRuleResult.blob.arrayBuffer(), { cellNF: true });
+const earlyInRuleWorkbook = await readWorkbookFromResult(earlyInRuleResult, { cellNF: true });
 const earlyInRuleSheet = earlyInRuleWorkbook.Sheets["Chi tiết"];
 
-assert.equal(earlyInRuleSheet.L2.v, 90);
-assert.match(earlyInRuleSheet.Q2.v, /Đi sớm chưa có Diary/);
-assert.doesNotMatch(earlyInRuleSheet.Q2.v, /trên 60 phút - tự tính tổng/);
+assert.equal(earlyInRuleSheet.P2.v, 90);
+assert.match(earlyInRuleSheet.V2.v, /Đi sớm chưa có Diary/);
+assert.doesNotMatch(earlyInRuleSheet.V2.v, /trên 60 phút - tự tính tổng/);
 assert.equal(earlyInRuleResult.highlights[0].violationStatuses.earlyIn, "missingDiary");
-assert.equal(earlyInRuleResult.previewHighlights[0][11], "earlyIn preview-status-missingDiary");
+assert.equal(earlyInRuleResult.previewHighlights[0][15], "earlyIn preview-status-missingDiary");
 
-assert.equal(earlyInRuleSheet.L3.v, 30);
-assert.match(earlyInRuleSheet.Q3.v, /Đi sớm chưa có Diary/);
+assert.equal(earlyInRuleSheet.P3.v, 30);
+assert.match(earlyInRuleSheet.V3.v, /Đi sớm chưa có Diary/);
 assert.equal(earlyInRuleResult.highlights[1].violationStatuses.earlyIn, "missingDiary");
-assert.equal(earlyInRuleResult.previewHighlights[1][11], "earlyIn preview-status-missingDiary");
+assert.equal(earlyInRuleResult.previewHighlights[1][15], "earlyIn preview-status-missingDiary");
 
-assert.equal(earlyInRuleSheet.L4.v, 90);
-assert.match(earlyInRuleSheet.Q4.v, /Đi sớm có phép: hỗ trợ mở shop/);
+assert.equal(earlyInRuleSheet.P4.v, 90);
+assert.match(earlyInRuleSheet.V4.v, /Đi sớm có phép: hỗ trợ mở shop/);
 assert.equal(earlyInRuleResult.highlights[2].violationStatuses.earlyIn, "permitted");
-assert.equal(earlyInRuleResult.previewHighlights[2][11], "earlyIn preview-status-permitted");
+assert.equal(earlyInRuleResult.previewHighlights[2][15], "earlyIn preview-status-permitted");
 
-assert.equal(earlyInRuleSheet.L5.v, 90);
-assert.match(earlyInRuleSheet.Q5.v, /Đi sớm không phép: tự ý đến sớm/);
+assert.equal(earlyInRuleSheet.P5.v, 90);
+assert.match(earlyInRuleSheet.V5.v, /Đi sớm không phép: tự ý đến sớm/);
 assert.equal(earlyInRuleResult.highlights[3].violationStatuses.earlyIn, "notPermitted");
-assert.equal(earlyInRuleResult.previewHighlights[3][11], "earlyIn preview-status-notPermitted");
-assert.equal(earlyInRuleSheet.T3.v, 0);
+assert.equal(earlyInRuleResult.previewHighlights[3][15], "earlyIn preview-status-notPermitted");
+assert.equal(earlyInRuleSheet.Y4.v, 90);
 assert.equal(earlyInRuleResult.diaryMatchedRows, 2);
 assert.equal(earlyInRuleResult.diaryExemptedRows, 1);
 
@@ -1059,10 +1074,7 @@ const morningToAfternoonResult = await processExcelFile(
     }],
   },
 );
-const morningToAfternoonWorkbook = XLSX.read(
-  await morningToAfternoonResult.blob.arrayBuffer(),
-  { cellNF: true },
-);
+const morningToAfternoonWorkbook = await readWorkbookFromResult(morningToAfternoonResult, { cellNF: true });
 const morningToAfternoonSheet = morningToAfternoonWorkbook.Sheets["Chi tiết"];
 
 assert.equal(morningToAfternoonResult.determinedShifts[0].shift, "Sáng");
@@ -1072,51 +1084,51 @@ assert.equal(morningToAfternoonResult.determinedShifts[0].standardOutTime, "16:3
 assert.equal(morningToAfternoonResult.determinedShifts[0].expectedEndByRegisteredHoursTime, "15:30");
 assert.equal(morningToAfternoonResult.determinedShifts[0].overtimeStandardOutTime, "15:30");
 assert.equal(morningToAfternoonResult.determinedShifts[0].overtimeActualOutTime, "21:00");
-assert.equal(morningToAfternoonSheet.P2.v, 330);
-assert.match(morningToAfternoonSheet.Q2.v, /Tăng ca full ngày: tính từ 15:30 đến 21:00/);
-assert.match(morningToAfternoonSheet.Q2.v, /Tăng ca làm full ngày sáng - chiều/);
-assert.doesNotMatch(morningToAfternoonSheet.Q2.v, /Tăng ca chưa có Diary/);
+assert.equal(morningToAfternoonSheet.T2.v, 330);
+assert.match(morningToAfternoonSheet.V2.v, /Tăng ca full ngày: tính từ 15:30 đến 21:00/);
+assert.match(morningToAfternoonSheet.V2.v, /Tăng ca làm full ngày sáng - chiều/);
+assert.doesNotMatch(morningToAfternoonSheet.V2.v, /Tăng ca chưa có Diary/);
 assert.equal(morningToAfternoonResult.highlights[0].violationStatuses.overtime, "fullDay");
 assert.equal(
-  morningToAfternoonResult.previewHighlights[0][15],
+  morningToAfternoonResult.previewHighlights[0][19],
   "overtime preview-status-fullDay",
 );
 
 assert.equal(morningToAfternoonResult.determinedShifts[1].shift, "Sáng");
 assert.equal(morningToAfternoonResult.determinedShifts[1].isFullDayByMorningToAfternoon, true);
-assert.equal(morningToAfternoonSheet.P3.v, 330);
-assert.match(morningToAfternoonSheet.Q3.v, /Tăng ca full ngày: tính từ 15:30 đến 21:00/);
+assert.equal(morningToAfternoonSheet.T3.v, 330);
+assert.match(morningToAfternoonSheet.V3.v, /Tăng ca full ngày: tính từ 15:30 đến 21:00/);
 assert.equal(morningToAfternoonResult.highlights[1].violationStatuses.overtime, "fullDay");
 assert.equal(
-  morningToAfternoonResult.previewHighlights[1][15],
+  morningToAfternoonResult.previewHighlights[1][19],
   "overtime preview-status-fullDay",
 );
 
 assert.equal(morningToAfternoonResult.determinedShifts[2].shift, "Sáng");
 assert.equal(morningToAfternoonResult.determinedShifts[2].isFullDayByMorningToAfternoon, false);
 assert.equal(morningToAfternoonResult.determinedShifts[2].expectedEndByRegisteredHoursTime, "15:30");
-assert.equal(morningToAfternoonSheet.P4.v, 150);
-assert.match(morningToAfternoonSheet.Q4.v, /Tăng ca chưa có Diary/);
+assert.equal(morningToAfternoonSheet.T4.v, 150);
+assert.match(morningToAfternoonSheet.V4.v, /Tăng ca chưa có Diary/);
 assert.equal(morningToAfternoonResult.highlights[2].violationStatuses.overtime, "missingDiary");
 
 assert.equal(morningToAfternoonResult.determinedShifts[3].shift, "Chiều");
 assert.equal(morningToAfternoonResult.determinedShifts[3].shiftKey, "afternoon");
 assert.equal(morningToAfternoonResult.determinedShifts[3].isFullDayByMorningToAfternoon, false);
 assert.equal(morningToAfternoonResult.determinedShifts[3].expectedEndByRegisteredHoursTime, "20:00");
-assert.equal(morningToAfternoonSheet.P5.v, 63);
-assert.match(morningToAfternoonSheet.Q5.v, /Tăng ca chưa có Diary/);
+assert.equal(morningToAfternoonSheet.T5.v, 63);
+assert.match(morningToAfternoonSheet.V5.v, /Tăng ca chưa có Diary/);
 
-assert.equal(morningToAfternoonSheet.P6.v, 330);
+assert.equal(morningToAfternoonSheet.T6.v, 330);
 assert.match(
-  morningToAfternoonSheet.Q6.v,
+  morningToAfternoonSheet.V6.v,
   /Tăng ca full ngày: tính từ 15:30 đến 21:00/,
 );
 assert.match(
-  morningToAfternoonSheet.Q6.v,
+  morningToAfternoonSheet.V6.v,
   /Tăng ca làm full ngày sáng - chiều: hỗ trợ tồn kho/,
 );
 assert.equal(morningToAfternoonResult.highlights[4].violationStatuses.overtime, "notPermitted");
-assert.equal(morningToAfternoonSheet.T7.v, 990);
+assert.equal(morningToAfternoonSheet.Y8.v, 0);
 
 const makeOfficeOvertimeEmployee = (employeeCode, employeeName) => ({
   id: `office-overtime-${employeeCode}`,
@@ -1147,18 +1159,15 @@ const vpNhiOvertimeResult = await processExcelFile(vpNhiOvertimeFile, [vpNhiEmpl
     violationTypes: ["Tăng ca"],
   }],
 });
-const vpNhiOvertimeWorkbook = XLSX.read(
-  await vpNhiOvertimeResult.blob.arrayBuffer(),
-  { cellNF: true },
-);
+const vpNhiOvertimeWorkbook = await readWorkbookFromResult(vpNhiOvertimeResult, { cellNF: true });
 const vpNhiOvertimeSheet = vpNhiOvertimeWorkbook.Sheets["Chi tiết"];
-assert.equal(vpNhiOvertimeSheet.P2.v, 30);
-assert.equal(vpNhiOvertimeSheet.T7.v, 0);
+assert.equal(vpNhiOvertimeSheet.T2.v, 30);
+assert.equal(vpNhiOvertimeSheet.Y8.v, 0);
 assert.match(
-  vpNhiOvertimeSheet.Q2.v,
+  vpNhiOvertimeSheet.V2.v,
   /Tăng ca VP không tính tổng: hoàn tất báo cáo/,
 );
-assert.doesNotMatch(vpNhiOvertimeSheet.Q2.v, /Tăng ca có phép/);
+assert.doesNotMatch(vpNhiOvertimeSheet.V2.v, /Tăng ca có phép/);
 assert.equal(vpNhiOvertimeResult.highlights[0].overtime, true);
 assert.equal(vpNhiOvertimeResult.highlights[0].violationStatuses.overtime, "permitted");
 assert.equal(vpNhiOvertimeResult.diaryMatchedRows, 1);
@@ -1169,16 +1178,13 @@ const vpDanhOvertimeFile = makeAttendanceFile([
   [1, "VP-DANH", "VP-Danh", new Date(2026, 8, 16), "T4", time(8, 0), time(19, 0), "", "", time(11, 0), 1, 0, 0, 0, 1, ""],
 ], "vp_danh_overtime.xlsx");
 const vpDanhOvertimeResult = await processExcelFile(vpDanhOvertimeFile, [vpDanhEmployee]);
-const vpDanhOvertimeWorkbook = XLSX.read(
-  await vpDanhOvertimeResult.blob.arrayBuffer(),
-  { cellNF: true },
-);
+const vpDanhOvertimeWorkbook = await readWorkbookFromResult(vpDanhOvertimeResult, { cellNF: true });
 const vpDanhOvertimeSheet = vpDanhOvertimeWorkbook.Sheets["Chi tiết"];
-assert.equal(vpDanhOvertimeSheet.P2.v, 120);
-assert.equal(vpDanhOvertimeSheet.T7.v, 0);
-assert.match(vpDanhOvertimeSheet.Q2.v, /Tăng ca VP không tính tổng/);
-assert.doesNotMatch(vpDanhOvertimeSheet.Q2.v, /Tăng ca chưa có Diary/);
-assert.doesNotMatch(vpDanhOvertimeSheet.Q2.v, /trên 60 phút - tự tính tổng/);
+assert.equal(vpDanhOvertimeSheet.T2.v, 120);
+assert.equal(vpDanhOvertimeSheet.Y8.v, 0);
+assert.match(vpDanhOvertimeSheet.V2.v, /Tăng ca VP không tính tổng/);
+assert.doesNotMatch(vpDanhOvertimeSheet.V2.v, /Tăng ca chưa có Diary/);
+assert.doesNotMatch(vpDanhOvertimeSheet.V2.v, /trên 60 phút - tự tính tổng/);
 assert.equal(vpDanhOvertimeResult.highlights[0].overtime, true);
 
 const vpHoaFullDayEmployee = {
@@ -1191,15 +1197,12 @@ const vpHoaFullDayFile = makeAttendanceFile([
   [1, "VP-HOA", "VP-Hoa", new Date(2026, 8, 17), "T5", time(7, 37), time(21, 3), "", "", time(13, 26), 1, 0, 0, 0, 1, ""],
 ], "vp_hoa_full_day_overtime.xlsx");
 const vpHoaFullDayResult = await processExcelFile(vpHoaFullDayFile, [vpHoaFullDayEmployee]);
-const vpHoaFullDayWorkbook = XLSX.read(
-  await vpHoaFullDayResult.blob.arrayBuffer(),
-  { cellNF: true },
-);
+const vpHoaFullDayWorkbook = await readWorkbookFromResult(vpHoaFullDayResult, { cellNF: true });
 const vpHoaFullDaySheet = vpHoaFullDayWorkbook.Sheets["Chi tiết"];
-assert.equal(vpHoaFullDaySheet.P2.v, 330);
-assert.equal(vpHoaFullDaySheet.T7.v, 0);
-assert.match(vpHoaFullDaySheet.Q2.v, /Tăng ca VP không tính tổng/);
-assert.doesNotMatch(vpHoaFullDaySheet.Q2.v, /Tăng ca làm full ngày sáng - chiều/);
+assert.equal(vpHoaFullDaySheet.T2.v, 330);
+assert.equal(vpHoaFullDaySheet.Y8.v, 0);
+assert.match(vpHoaFullDaySheet.V2.v, /Tăng ca VP không tính tổng/);
+assert.doesNotMatch(vpHoaFullDaySheet.V2.v, /Tăng ca làm full ngày sáng - chiều/);
 assert.equal(vpHoaFullDayResult.determinedShifts[0].isFullDayByMorningToAfternoon, true);
 assert.equal(vpHoaFullDayResult.highlights[0].overtime, true);
 
@@ -1240,13 +1243,13 @@ const vpMonthlyWarningFile = makeAttendanceFile([
   [3, "VPW", "VP-Warning", new Date(2026, 11, 3), "T5", time(9, 10), time(17, 0), "", "", time(7, 50), 1, 0, 0, 0, 1, ""],
 ], "vp_monthly_warning.xlsx");
 const vpMonthlyWarningResult = await processExcelFile(vpMonthlyWarningFile, [vpMonthlyWarningEmployee]);
-const vpMonthlyWarningWorkbook = XLSX.read(await vpMonthlyWarningResult.blob.arrayBuffer(), { cellNF: true });
+const vpMonthlyWarningWorkbook = await readWorkbookFromResult(vpMonthlyWarningResult, { cellNF: true });
 const vpMonthlyWarningSheet = vpMonthlyWarningWorkbook.Sheets["Chi tiết"];
 assert.equal(vpMonthlyWarningResult.vpMonthlyLateSummaries[0].totalLateMinutes, 210);
-["Q2", "Q3", "Q4"].forEach((address) => {
+["V2", "V3", "V4"].forEach((address) => {
   assert.doesNotMatch(vpMonthlyWarningSheet[address].v, new RegExp(MONTHLY_LATE_WARNING_TEXT));
 });
-assert.equal(vpMonthlyWarningSheet.S8.v, MONTHLY_LATE_WARNING_TEXT);
+assert.equal(vpMonthlyWarningSheet.X10.v, MONTHLY_LATE_WARNING_TEXT);
 
 assert.deepEqual(normalizeDiaryViolationTypes(["OFF > 2 ngày"]), ["OFF"]);
 
@@ -1325,29 +1328,29 @@ const longOffResult = await processExcelFile(longOffFile, longOffEmployees, {
     },
   ],
 });
-const longOffWorkbook = XLSX.read(await longOffResult.blob.arrayBuffer(), { cellNF: true });
+const longOffWorkbook = await readWorkbookFromResult(longOffResult, { cellNF: true });
 const longOffSheet = longOffWorkbook.Sheets["Chi tiết"];
-assert.match(longOffSheet.Q2.v, /OFF > 2 ngày có phép: nghỉ bệnh/);
-assert.doesNotMatch(longOffSheet.Q2.v, /nghỉ cũ/);
+assert.match(longOffSheet.V2.v, /OFF > 2 ngày có phép: nghỉ bệnh/);
+assert.doesNotMatch(longOffSheet.V2.v, /nghỉ cũ/);
 assert.equal(longOffResult.highlights[0].longOff, true);
 assert.equal(longOffResult.highlights[0].longOffStatus, "permitted");
-assert.equal(longOffResult.previewHighlights[0][16], "off preview-status-permitted");
-assert.equal(longOffSheet.L2?.v, undefined);
-assert.equal(longOffSheet.M2?.v, undefined);
-assert.equal(longOffSheet.O2?.v, undefined);
+assert.equal(longOffResult.previewHighlights[0][21], "off preview-status-permitted");
 assert.equal(longOffSheet.P2?.v, undefined);
+assert.equal(longOffSheet.Q2?.v, undefined);
+assert.equal(longOffSheet.S2?.v, undefined);
+assert.equal(longOffSheet.T2?.v, undefined);
 
-assert.match(longOffSheet.Q4.v, /OFF > 2 ngày không phép: nghỉ không báo/);
+assert.match(longOffSheet.V4.v, /OFF > 2 ngày không phép: nghỉ không báo/);
 assert.equal(longOffResult.highlights[2].longOffStatus, "notPermitted");
-assert.equal(longOffResult.previewHighlights[2][16], "off preview-status-notPermitted");
+assert.equal(longOffResult.previewHighlights[2][21], "off preview-status-notPermitted");
 
-assert.match(longOffSheet.Q6.v, /OFF > 2 ngày chưa có Diary/);
+assert.match(longOffSheet.V6.v, /OFF > 2 ngày chưa có Diary/);
 assert.equal(longOffResult.highlights[4].longOffStatus, "missingDiary");
-assert.equal(longOffResult.previewHighlights[4][16], "off preview-status-missingDiary");
+assert.equal(longOffResult.previewHighlights[4][21], "off preview-status-missingDiary");
 
-assert.doesNotMatch(longOffSheet.Q8.v, /OFF > 2 ngày/);
+assert.doesNotMatch(longOffSheet.V8.v, /OFF > 2 ngày/);
 assert.equal(longOffResult.highlights[6].longOff, false);
-assert.equal(longOffResult.previewHighlights[6][16], null);
+assert.equal(longOffResult.previewHighlights[6][21], null);
 assert.equal(longOffResult.diaryMatchedRows, 4);
 assert.equal(longOffResult.diaryExemptedRows, 2);
 
@@ -1416,38 +1419,38 @@ const diaryViolationResult = await processExcelFile(diaryViolationFile, [diaryVi
     },
   ],
 });
-const diaryViolationWorkbook = XLSX.read(await diaryViolationResult.blob.arrayBuffer(), {
+const diaryViolationWorkbook = await readWorkbookFromResult(diaryViolationResult, {
   cellNF: true,
   cellStyles: true,
 });
 const diaryViolationSheet = diaryViolationWorkbook.Sheets["Chi tiết"];
-assert.equal(diaryViolationSheet.M2.v, 20);
-assert.equal(diaryViolationSheet.N2.v, 0);
-assert.match(diaryViolationSheet.Q2.v, /Đi trễ có phép: Kẹt xe/);
+assert.equal(diaryViolationSheet.Q2.v, 20);
+assert.equal(diaryViolationSheet.R2.v, 0);
+assert.match(diaryViolationSheet.V2.v, /Đi trễ có phép: Kẹt xe/);
 assert.equal(diaryViolationResult.highlights[0].violationStatuses.late, "permitted");
-assert.equal(diaryViolationResult.previewHighlights[0][12], "late preview-status-permitted");
+assert.equal(diaryViolationResult.previewHighlights[0][16], "late preview-status-permitted");
 
-assert.equal(diaryViolationSheet.M3.v, 20);
-assert.equal(diaryViolationSheet.N3.v, 70000);
-assert.match(diaryViolationSheet.Q3.v, /Đi trễ không phép: Ngủ quên/);
+assert.equal(diaryViolationSheet.Q3.v, 20);
+assert.equal(diaryViolationSheet.R3.v, 70000);
+assert.match(diaryViolationSheet.V3.v, /Đi trễ không phép: Ngủ quên/);
 assert.equal(diaryViolationResult.highlights[1].violationStatuses.late, "notPermitted");
-assert.equal(diaryViolationResult.previewHighlights[1][12], "late preview-status-notPermitted");
+assert.equal(diaryViolationResult.previewHighlights[1][16], "late preview-status-notPermitted");
 
-assert.equal(diaryViolationSheet.L4.v, 30);
-assert.match(diaryViolationSheet.Q4.v, /Đi sớm có phép: Mở cửa/);
+assert.equal(diaryViolationSheet.P4.v, 30);
+assert.match(diaryViolationSheet.V4.v, /Đi sớm có phép: Mở cửa/);
 assert.equal(diaryViolationResult.highlights[2].violationStatuses.earlyIn, "permitted");
-assert.equal(diaryViolationResult.previewHighlights[2][11], "earlyIn preview-status-permitted");
+assert.equal(diaryViolationResult.previewHighlights[2][15], "earlyIn preview-status-permitted");
 
-assert.equal(diaryViolationSheet.O5.v, 30);
-assert.match(diaryViolationSheet.Q5.v, /Về sớm có phép: Khám bệnh/);
+assert.equal(diaryViolationSheet.S5.v, 30);
+assert.match(diaryViolationSheet.V5.v, /Về sớm có phép: Khám bệnh/);
 assert.equal(diaryViolationResult.highlights[3].violationStatuses.early, "permitted");
-assert.equal(diaryViolationResult.previewHighlights[3][14], "early preview-status-permitted");
+assert.equal(diaryViolationResult.previewHighlights[3][18], "early preview-status-permitted");
 
-assert.equal(diaryViolationSheet.P6.v, 60);
-assert.match(diaryViolationSheet.Q6.v, /Tăng ca có phép: Kiểm kê/);
+assert.equal(diaryViolationSheet.T6.v, 60);
+assert.match(diaryViolationSheet.V6.v, /Tăng ca có phép: Kiểm kê/);
 assert.equal(diaryViolationResult.highlights[4].violationStatuses.overtime, "permitted");
-assert.equal(diaryViolationResult.previewHighlights[4][15], "overtime preview-status-permitted");
-assert.equal(diaryViolationSheet.T4.v, 40);
+assert.equal(diaryViolationResult.previewHighlights[4][19], "overtime preview-status-permitted");
+assert.equal(diaryViolationSheet.Y5.v, 40);
 assert.equal(diaryViolationResult.diaryMatchedRows, 5);
 assert.equal(diaryViolationResult.diaryExemptedRows, 4);
 
@@ -1502,33 +1505,33 @@ const mandatoryLateResult = await processExcelFile(mandatoryLateFile, [mandatory
     },
   ],
 });
-const mandatoryLateWorkbook = XLSX.read(await mandatoryLateResult.blob.arrayBuffer(), {
+const mandatoryLateWorkbook = await readWorkbookFromResult(mandatoryLateResult, {
   cellNF: true,
   cellStyles: true,
 });
 const mandatoryLateSheet = mandatoryLateWorkbook.Sheets["Chi tiết"];
 
-assert.equal(mandatoryLateSheet.M2.v, 15);
-assert.equal(mandatoryLateSheet.N2.v, 0);
-assert.match(mandatoryLateSheet.Q2.v, /Ghi chú nền; .*Đi trễ có phép: kẹt xe/);
-assert.equal((mandatoryLateSheet.Q2.v.match(/Đi trễ có phép: kẹt xe/g) ?? []).length, 1);
-assert.doesNotMatch(mandatoryLateSheet.Q2.v, /lý do cũ/);
+assert.equal(mandatoryLateSheet.Q2.v, 15);
+assert.equal(mandatoryLateSheet.R2.v, 0);
+assert.match(mandatoryLateSheet.V2.v, /Ghi chú nền; .*Đi trễ có phép: kẹt xe/);
+assert.equal((mandatoryLateSheet.V2.v.match(/Đi trễ có phép: kẹt xe/g) ?? []).length, 1);
+assert.doesNotMatch(mandatoryLateSheet.V2.v, /lý do cũ/);
 assert.equal(mandatoryLateResult.highlights[0].violationStatuses.late, "permitted");
-assert.equal(mandatoryLateResult.previewHighlights[0][12], "late preview-status-permitted");
+assert.equal(mandatoryLateResult.previewHighlights[0][16], "late preview-status-permitted");
 
-assert.equal(mandatoryLateSheet.M3.v, 15);
-assert.equal(mandatoryLateSheet.N3.v, 70000);
-assert.match(mandatoryLateSheet.Q3.v, /Đi trễ không phép: ngủ quên/);
+assert.equal(mandatoryLateSheet.Q3.v, 15);
+assert.equal(mandatoryLateSheet.R3.v, 70000);
+assert.match(mandatoryLateSheet.V3.v, /Đi trễ không phép: ngủ quên/);
 assert.equal(mandatoryLateResult.highlights[1].violationStatuses.late, "notPermitted");
-assert.equal(mandatoryLateResult.previewHighlights[1][12], "late preview-status-notPermitted");
+assert.equal(mandatoryLateResult.previewHighlights[1][16], "late preview-status-notPermitted");
 
-assert.equal(mandatoryLateSheet.M4.v, 15);
-assert.equal(mandatoryLateSheet.N4.v, 70000);
-assert.match(mandatoryLateSheet.Q4.v, /Đi trễ chưa có Diary/);
+assert.equal(mandatoryLateSheet.Q4.v, 15);
+assert.equal(mandatoryLateSheet.R4.v, 70000);
+assert.match(mandatoryLateSheet.V4.v, /Đi trễ chưa có Diary/);
 assert.equal(mandatoryLateResult.highlights[2].violationStatuses.late, "missingDiary");
-assert.equal(mandatoryLateResult.previewHighlights[2][12], "late preview-status-missingDiary");
+assert.equal(mandatoryLateResult.previewHighlights[2][16], "late preview-status-missingDiary");
 
-assert.equal(mandatoryLateSheet.T4.v, 45);
+assert.equal(mandatoryLateSheet.Y5.v, 45);
 assert.equal(mandatoryLateResult.diaryMatchedRows, 2);
 assert.equal(mandatoryLateResult.diaryExemptedRows, 1);
 
@@ -1573,26 +1576,26 @@ const earlyTotalResult = await processExcelFile(earlyTotalFile, [earlyTotalEmplo
     },
   ],
 });
-const earlyTotalWorkbook = XLSX.read(await earlyTotalResult.blob.arrayBuffer(), {
+const earlyTotalWorkbook = await readWorkbookFromResult(earlyTotalResult, {
   cellNF: true,
   cellStyles: true,
 });
 const earlyTotalSheet = earlyTotalWorkbook.Sheets["Chi tiết"];
-assert.equal(earlyTotalSheet.O2.v, 30);
-assert.match(earlyTotalSheet.Q2.v, /Về sớm có phép: benh/);
+assert.equal(earlyTotalSheet.S2.v, 30);
+assert.match(earlyTotalSheet.V2.v, /Về sớm có phép: benh/);
 assert.equal(earlyTotalResult.highlights[0].violationStatuses.early, "permitted");
-assert.equal(earlyTotalResult.previewHighlights[0][14], "early preview-status-permitted");
+assert.equal(earlyTotalResult.previewHighlights[0][18], "early preview-status-permitted");
 
-assert.equal(earlyTotalSheet.O3.v, 30);
-assert.match(earlyTotalSheet.Q3.v, /Về sớm không phép: viec rieng/);
+assert.equal(earlyTotalSheet.S3.v, 30);
+assert.match(earlyTotalSheet.V3.v, /Về sớm không phép: viec rieng/);
 assert.equal(earlyTotalResult.highlights[1].violationStatuses.early, "notPermitted");
-assert.equal(earlyTotalResult.previewHighlights[1][14], "early preview-status-notPermitted");
+assert.equal(earlyTotalResult.previewHighlights[1][18], "early preview-status-notPermitted");
 
-assert.equal(earlyTotalSheet.O4.v, 30);
-assert.match(earlyTotalSheet.Q4.v, /Về sớm chưa có Diary/);
+assert.equal(earlyTotalSheet.S4.v, 30);
+assert.match(earlyTotalSheet.V4.v, /Về sớm chưa có Diary/);
 assert.equal(earlyTotalResult.highlights[2].violationStatuses.early, "missingDiary");
-assert.equal(earlyTotalResult.previewHighlights[2][14], "early preview-status-missingDiary");
-assert.equal(earlyTotalSheet.T6.v, 90);
+assert.equal(earlyTotalResult.previewHighlights[2][18], "early preview-status-missingDiary");
+assert.equal(earlyTotalSheet.Y7.v, 90);
 assert.equal(earlyTotalResult.diaryMatchedRows, 2);
 assert.equal(earlyTotalResult.diaryExemptedRows, 1);
 
@@ -1610,16 +1613,13 @@ const earlyInAuditResult = await processExcelFile(earlyInAuditFile, [earlyInRule
     violationTypes: ["Đi sớm"],
   }],
 });
-const earlyInAuditWorkbook = XLSX.read(
-  await earlyInAuditResult.blob.arrayBuffer(),
-  { cellNF: true },
-);
+const earlyInAuditWorkbook = await readWorkbookFromResult(earlyInAuditResult, { cellNF: true });
 const earlyInAuditSheet = earlyInAuditWorkbook.Sheets["Chi tiết"];
-assert.equal(earlyInAuditSheet.L2.v, 45);
-assert.match(earlyInAuditSheet.Q2.v, /Đi sớm có phép: hỗ trợ mở shop/);
-assert.equal(earlyInAuditSheet.L3.v, 45);
-assert.match(earlyInAuditSheet.Q3.v, /Đi sớm chưa có Diary/);
-assert.equal(earlyInAuditSheet.T3.v, 0);
+assert.equal(earlyInAuditSheet.P2.v, 45);
+assert.match(earlyInAuditSheet.V2.v, /Đi sớm có phép: hỗ trợ mở shop/);
+assert.equal(earlyInAuditSheet.P3.v, 45);
+assert.match(earlyInAuditSheet.V3.v, /Đi sớm chưa có Diary/);
+assert.equal(earlyInAuditSheet.Y4.v, 45);
 
 assert.equal(calculateTotalWorkedMinutes("09:00"), 480);
 assert.equal(calculateTotalWorkedMinutes("04:00", { deductLunchBreak: false }), 240);

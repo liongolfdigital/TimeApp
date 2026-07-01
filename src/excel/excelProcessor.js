@@ -17,6 +17,7 @@ import {
   ENABLE_AUTO_COUNT_OVERTIME_OVER_60,
 } from "./diaryViolationResolver.js";
 import { appendEmployeeAttendanceSheets } from "./employeeSheetsBuilder.js";
+import { buildAttendanceExportPackage } from "./exportPackageBuilder.js";
 import { makeOutputFileName } from "./excelFileNames.js";
 import {
   ATTENDANCE_COLOR_MAP,
@@ -147,10 +148,24 @@ export async function processExcelFile(
       processedEmployeeCodes.has(normalizeEmployeeCode(employee.employeeCode))
     )?.branch ?? "";
 
+  const excelFileName = makeOutputFileName(branchName, { rowResults: employeeDetailRows });
+  const excelBlob = new Blob([outputBuffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const exportPackage = await buildAttendanceExportPackage({
+    excelBlob,
+    excelFileName,
+    employeeDetailRows,
+    employeeSummaries,
+  });
+
   return {
-    blob: new Blob([outputBuffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }),
+    blob: exportPackage.blob,
+    fileName: exportPackage.fileName,
+    excelBlob,
+    excelFileName,
+    exportFolderName: exportPackage.folderName,
+    pdfCount: exportPackage.pdfCount,
     headers: OUTPUT_COLUMNS,
     previewRows: preview.rows,
     previewHighlights: preview.highlights,
@@ -172,13 +187,12 @@ export async function processExcelFile(
     highlights,
     processedRows,
     sourceFileName: file?.name || "",
-    fileName: makeOutputFileName(branchName, { rowResults: employeeDetailRows }),
+    employeeSummaries,
+    employeeDetailRows,
     ...(includeProcessedSheet ? {
       processedSheet,
       processedHeaderRow: headerRow,
       processedStartColumn: previewBounds.s.c,
-      employeeSummaries,
-      employeeDetailRows,
     } : {}),
   };
 }

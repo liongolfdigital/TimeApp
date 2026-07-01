@@ -223,6 +223,7 @@ export function useAttendanceProcessing({ employees, diaryEntries, shiftRules })
             processedMeta: {
               totalRows: result.totalRows,
               filteredOutRows: result.filteredOutRows,
+              pdfCount: result.pdfCount,
             },
             resultFile: exportMode === "separate"
               ? result
