@@ -12,12 +12,12 @@ function readRequestedPage(pageConfig) {
 }
 
 function pagePath(page) {
-  return page === "attendance" ? "/" : `/${page}`;
+  return page === "process" ? "/" : `/${page}`;
 }
 
 /** Đồng bộ page nội bộ với History API và chặn route ngoài phạm vi quyền. */
 export function useAppNavigation(currentUser, pageConfig) {
-  const [activePage, setActivePage] = useState("attendance");
+  const [activePage, setActivePage] = useState("process");
   const [accessDenied, setAccessDenied] = useState("");
 
   const resolveRoute = useCallback((user, { replace = false } = {}) => {
@@ -69,7 +69,7 @@ export function useAppNavigation(currentUser, pageConfig) {
 
   const resetNavigation = useCallback(() => {
     setAccessDenied("");
-    setActivePage("attendance");
+    setActivePage("process");
     window.history.replaceState({}, "", "/");
   }, []);
 

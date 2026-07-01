@@ -10,7 +10,7 @@ import {
 import { ROLES } from "../constants/roleConstants";
 
 export const BRANCHES = DEFAULT_BRANCH_CODES;
-export const ADMIN_PAGES = ["attendance", "process", "employees", "diary", "accounts"];
+export const ADMIN_PAGES = ["process", "employees", "diary", "accounts"];
 export const MANAGER_PAGES = ["employees", "diary"];
 
 export { detectBranchFromText, normalizeBranch };
@@ -61,7 +61,7 @@ export function getRecordBranch(record) {
 
 /** Chọn trang mặc định theo vai trò sau đăng nhập. */
 export function defaultPageForUser(user) {
-  return isManager(user) ? "employees" : "attendance";
+  return isManager(user) ? "employees" : "process";
 }
 
 /** Kiểm tra quyền truy cập một page frontend theo vai trò. */

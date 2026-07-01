@@ -97,6 +97,14 @@ function calculateTotalHoursFromShopClock(clockValues = {}) {
   return totalMinutes / 60;
 }
 
+function calculateShopBreakDeductionMinutes(clockValues = {}) {
+  const firstOutMinutes = timeValueToMinutes(clockValues.out1);
+  const secondInMinutes = timeValueToMinutes(clockValues.in2);
+  if (firstOutMinutes === null || secondInMinutes === null) return 0;
+  const breakMinutes = Math.round(secondInMinutes - firstOutMinutes);
+  return breakMinutes > 0 ? breakMinutes : 0;
+}
+
 function writeDiaryShopClockCells({
   XLSX,
   targetSheet,
@@ -374,6 +382,18 @@ export function processAttendanceSourceRow({
     employeeName,
     row,
   });
+
+  const shopBreakDeductionMinutes = hasDiaryShopClock
+    ? calculateShopBreakDeductionMinutes(diaryShopClockValues)
+    : 0;
+  if (shopBreakDeductionMinutes > 0) {
+    calculation.otherDeductionMinutes =
+      (Number(calculation.otherDeductionMinutes) || 0) + shopBreakDeductionMinutes;
+    calculation.note = appendNote(
+      calculation.note,
+      `Trừ khác Shop ${shopBreakDeductionMinutes} phút`,
+    );
+  }
 
   const employeeKey = getAttendanceEmployeeKey(employeeCode, employeeName);
   const dayKey = normalizeDiaryDate(dateValue);

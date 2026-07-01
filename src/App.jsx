@@ -4,7 +4,6 @@ import {
   isAdmin,
 } from "./auth/authorization";
 import AccountPage from "./components/AccountPage";
-import AttendancePage from "./components/AttendancePage";
 import DiaryPage from "./components/DiaryPage";
 import EmployeePage from "./components/EmployeePage";
 import LoginPage from "./components/LoginPage";
@@ -63,7 +62,7 @@ export default function App() {
   }
 
   const navPages = isAdmin(session.currentUser)
-    ? ["attendance", "process", "employees", "diary", "accounts"]
+    ? ["process", "employees", "diary", "accounts"]
     : ["employees", "diary"];
 
   return (
@@ -94,15 +93,6 @@ export default function App() {
         </main>
       )}
 
-      {navigation.activePage === "attendance" && isAdmin(session.currentUser) && (
-        <AttendancePage
-          employees={data.employees}
-          diaryEntries={data.diaryEntriesWithAttachments}
-          shiftRules={data.shiftRules}
-          onOpenEmployees={() => navigation.openPage("employees")}
-          onOpenDiary={() => navigation.openPage("diary")}
-        />
-      )}
       {navigation.activePage === "process" && isAdmin(session.currentUser) && (
         <ProcessPage
           employees={data.employees}
