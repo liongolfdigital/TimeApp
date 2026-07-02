@@ -61,6 +61,7 @@ function buildSummaryValues(summary = {}) {
     Number(summary.lateMinutes) || 0,
     Number(summary.earlyMinutes) || 0,
     Number(summary.otherDeductionMinutes) || 0,
+    Number(summary.penalty) || 0,
     "",
   ];
 }
@@ -112,6 +113,7 @@ function buildDocDefinition(report) {
             33,
             33,
             34,
+            36,
             "*",
           ],
           body: buildTableBody(report),

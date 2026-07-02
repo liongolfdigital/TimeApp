@@ -20,6 +20,7 @@ export const EMPLOYEE_ATTENDANCE_HEADERS = Object.freeze([
   "Đi trễ",
   "Về sớm",
   "Trừ khác",
+  "Phạt",
   "Ghi chú",
 ]);
 
@@ -241,6 +242,7 @@ export function buildEmployeeAttendanceRowValues(rowResult, reportMonthKey = "",
     Number(calculation.lateMinutes) || 0,
     Number(calculation.earlyMinutes) || 0,
     Number(calculation.otherDeductionMinutes) || 0,
+    Number(calculation.penalty) || 0,
     rowResult.diaryNote ?? "",
   ];
 }
@@ -285,6 +287,7 @@ function buildEmployeeSheetSummary(
       earlyMinutes: Number(sourceSummary.earlyMinutes) || 0,
       overtimeMinutes: isVpEmployee(employeeName) ? 0 : Number(sourceSummary.overtimeMinutes) || 0,
       otherDeductionMinutes: Number(sourceSummary.otherDeductionMinutes) || 0,
+      penalty: Number(sourceSummary.penalty) || 0,
       workDayCount: Number(sourceSummary.workDayCount) || 0,
       workedDayKeys: new Set(sourceSummary.workedDayKeys ?? []),
     };
@@ -296,6 +299,7 @@ function buildEmployeeSheetSummary(
     earlyMinutes: 0,
     overtimeMinutes: 0,
     otherDeductionMinutes: 0,
+    penalty: 0,
     workDayCount: 0,
     workedDayKeys: new Set(),
   };
@@ -311,6 +315,7 @@ function buildEmployeeSheetSummary(
       summary.overtimeMinutes += Number(calculation.validOvertimeMinutes) || 0;
     }
     summary.otherDeductionMinutes += Number(calculation.otherDeductionMinutes) || 0;
+    summary.penalty += Number(calculation.penalty) || 0;
     const workedDayCredit = getDisplayWorkDay(rowResult, reportMonthKey, employeeName);
     if (workedDayCredit > 0) {
       summary.workedDayKeys.add(getWorkedDayKey(rowResult));
@@ -330,8 +335,8 @@ function writeEmployeeSheetRows({ XLSX, sheet, rows, reportMonthKey, employeeNam
     values.forEach((value, column) => {
       if (column >= 2 && column <= 5) {
         writeClockCell(sheet, XLSX, row, column, value);
-      } else if (column >= 6 && column <= 11) {
-        writeNumberCell(sheet, XLSX, row, column, value, column === 6 ? WORKDAY_NUMBER_FORMAT : "0");
+      } else if (column >= 6 && column <= 12) {
+        writeNumberCell(sheet, XLSX, row, column, value, column === 6 ? WORKDAY_NUMBER_FORMAT : column === 12 ? "#,##0" : "0");
       } else {
         writeTextCell(sheet, XLSX, row, column, value, {
           alignment: { vertical: "center", wrapText: true },
@@ -355,6 +360,7 @@ function writeEmployeeSummaryRow({ XLSX, sheet, row, summary }) {
     Number(summary.lateMinutes) || 0,
     Number(summary.earlyMinutes) || 0,
     Number(summary.otherDeductionMinutes) || 0,
+    Number(summary.penalty) || 0,
     "",
   ];
   const summaryStyle = {
@@ -370,8 +376,8 @@ function writeEmployeeSummaryRow({ XLSX, sheet, row, summary }) {
   };
 
   summaryValues.forEach((value, column) => {
-    if (column >= 6 && column <= 11) {
-      writeNumberCell(sheet, XLSX, row, column, value, column === 6 ? WORKDAY_NUMBER_FORMAT : "0");
+    if (column >= 6 && column <= 12) {
+      writeNumberCell(sheet, XLSX, row, column, value, column === 6 ? WORKDAY_NUMBER_FORMAT : column === 12 ? "#,##0" : "0");
       const address = XLSX.utils.encode_cell({ r: row, c: column });
       applyCellStyle(sheet[address], summaryStyle);
       return;
@@ -431,6 +437,7 @@ function createEmployeeSheet(XLSX, { employeeName, monthLabel, reportMonthKey, r
     { wch: 10 },
     { wch: 10 },
     { wch: 10 },
+    { wch: 12 },
     { wch: 42 },
   ];
   sheet["!rows"] = [
