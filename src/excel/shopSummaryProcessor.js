@@ -18,7 +18,7 @@ const SHOP_SUMMARY_HEADERS = Object.freeze([
 
 const FIELD_ALIASES = Object.freeze({
   employeeCode: ["ma nv", "ma n vien", "ma nhan vien", "ma nhan su"],
-  employeeName: ["ten cc", "ten n vien", "ten nhan vien", "ten cham cong"],
+  employeeName: ["ten cc", "ten n vien", "ten nhan vien", "ten cham cong", "nhan vien"],
   fullName: ["ho va ten", "ho ten", "ten day du"],
   day: ["ngay"],
   workDays: ["ngay cong", "tong cong", "cong"],
@@ -166,6 +166,73 @@ function findHeaderRow(textRows = []) {
   return null;
 }
 
+
+function buildEmployeeSheetColumnMap(headerRow = []) {
+  const map = {
+    workDays: findColumn(headerRow, FIELD_ALIASES.workDays),
+    overtime: findColumn(headerRow, FIELD_ALIASES.overtime),
+    late: findColumn(headerRow, FIELD_ALIASES.late),
+    early: findColumn(headerRow, FIELD_ALIASES.early),
+    otherDeduction: findColumn(headerRow, FIELD_ALIASES.otherDeduction),
+    penalty: findColumn(headerRow, FIELD_ALIASES.penalty),
+  };
+  const hasEmployeeSheetShape = findColumn(headerRow, ["ngay"]) >= 0 &&
+    [map.workDays, map.overtime, map.late, map.early, map.otherDeduction, map.penalty]
+      .filter((index) => index >= 0).length >= 3;
+  return hasEmployeeSheetShape ? map : null;
+}
+
+function findEmployeeSheetHeaderRow(textRows = []) {
+  const limit = Math.min(textRows.length, 30);
+  for (let rowIndex = 0; rowIndex < limit; rowIndex += 1) {
+    const columnMap = buildEmployeeSheetColumnMap(textRows[rowIndex]);
+    if (columnMap) return { rowIndex, columnMap };
+  }
+  return null;
+}
+
+function extractEmployeeSheetName(textRows = [], sheetName = "") {
+  for (const row of textRows.slice(0, 8)) {
+    for (const cell of row ?? []) {
+      const text = compactText(cell);
+      const match = text.match(/^nh[aâ]n\s*vi[eê]n\s*:\s*(.+)$/i);
+      if (match?.[1]) return compactText(match[1]);
+    }
+  }
+  return compactText(sheetName);
+}
+
+function findEmployeeSheetSummaryRow(textRows = [], headerRowIndex = 0) {
+  for (let rowIndex = headerRowIndex + 1; rowIndex < textRows.length; rowIndex += 1) {
+    const firstCell = normalizeHeader(textRows[rowIndex]?.[0]);
+    if (firstCell === "tong" || firstCell === "tong cong") return rowIndex;
+  }
+  return -1;
+}
+
+function parseEmployeeSheetSummary({ sheetName, textRows, rawRows }) {
+  const headerInfo = findEmployeeSheetHeaderRow(textRows);
+  if (!headerInfo) return null;
+  const summaryRowIndex = findEmployeeSheetSummaryRow(textRows, headerInfo.rowIndex);
+  if (summaryRowIndex < 0) return null;
+
+  const employeeName = extractEmployeeSheetName(textRows, sheetName);
+  if (!employeeName) return null;
+
+  const rawRow = rawRows[summaryRowIndex] ?? [];
+  const textRow = textRows[summaryRowIndex] ?? [];
+  const columnMap = headerInfo.columnMap;
+  return {
+    employeeName,
+    workDays: getMetric(rawRow, textRow, columnMap.workDays),
+    overtime: getMetric(rawRow, textRow, columnMap.overtime),
+    late: getMetric(rawRow, textRow, columnMap.late),
+    early: getMetric(rawRow, textRow, columnMap.early),
+    otherDeduction: getMetric(rawRow, textRow, columnMap.otherDeduction),
+    penalty: getMetric(rawRow, textRow, columnMap.penalty),
+  };
+}
+
 function excelSerialToMonthKey(XLSX, serial) {
   if (typeof serial !== "number" || !Number.isFinite(serial)) return "";
   const parsed = XLSX.SSF.parse_date_code(serial);
@@ -275,6 +342,82 @@ function mergeRecordIdentity(record, { sourceFileName, employeeCode, employeeNam
   record.sourceFileName = record.sourceFileName || sourceFileName;
 }
 
+
+function recordHasSourceFile(record, sourceFileName) {
+  const normalizedSource = normalizeHeader(sourceFileName);
+  if (!normalizedSource) return true;
+  const sourceValues = record.sourceFileNames?.size ? Array.from(record.sourceFileNames) : [record.sourceFileName];
+  return sourceValues.some((value) => normalizeHeader(value) === normalizedSource);
+}
+
+function recordHasEmployeeName(record, employeeName) {
+  const normalizedName = normalizeHeader(employeeName);
+  if (!normalizedName) return false;
+  const names = record.employeeNames?.size ? Array.from(record.employeeNames) : [record.employeeName];
+  return names.some((value) => normalizeHeader(value) === normalizedName);
+}
+
+function findRecordKeyByEmployeeSheetName(aggregateMap, sourceFileName, employeeName) {
+  for (const [key, record] of aggregateMap.entries()) {
+    if (recordHasSourceFile(record, sourceFileName) && recordHasEmployeeName(record, employeeName)) {
+      return key;
+    }
+  }
+  for (const [key, record] of aggregateMap.entries()) {
+    if (recordHasEmployeeName(record, employeeName)) return key;
+  }
+  return "";
+}
+
+function applyEmployeeSheetSummary({ aggregateMap, order, sourceFileName, summary }) {
+  if (!summary?.employeeName) return false;
+  const hasAnyMetric = [
+    summary.workDays,
+    summary.overtime,
+    summary.late,
+    summary.early,
+    summary.otherDeduction,
+    summary.penalty,
+  ].some((value) => Math.abs(Number(value) || 0) > 0);
+  if (!hasAnyMetric) return false;
+
+  let key = findRecordKeyByEmployeeSheetName(aggregateMap, sourceFileName, summary.employeeName);
+  if (!key) {
+    key = makeRecordKey({
+      sourceFileName,
+      employeeCode: "",
+      employeeName: summary.employeeName,
+      fullName: "",
+    });
+    if (!aggregateMap.has(key)) {
+      aggregateMap.set(key, createAggregateRecord({
+        sourceFileName,
+        employeeCode: "",
+        employeeName: summary.employeeName,
+        fullName: "",
+      }));
+      order.push(key);
+    }
+  }
+
+  const record = aggregateMap.get(key);
+  mergeRecordIdentity(record, {
+    sourceFileName,
+    employeeCode: "",
+    employeeName: summary.employeeName,
+    fullName: "",
+  });
+
+  // Employee sheets were generated from the Summary box. Use them as a supplement
+  // for Phạt because the source detail sheet can have an empty "Phân loại đi trễ".
+  // Do not re-add workdays/overtime/late/early/other here because the main shop
+  // sheet already supplies those values.
+  if ((Number(record.penalty) || 0) <= 0 && (Number(summary.penalty) || 0) > 0) {
+    record.penalty = Number(summary.penalty) || 0;
+  }
+  return true;
+}
+
 function addToAggregate(record, rawRow, textRow, columnMap) {
   record.workDays += getMetric(rawRow, textRow, columnMap.workDays);
   record.overtime += getMetric(rawRow, textRow, columnMap.overtime);
@@ -288,7 +431,22 @@ function parseSheetRows({ XLSX, sheet, sheetName, fileName, aggregateMap, order,
   const textRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false });
   const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
   const headerInfo = findHeaderRow(textRows);
-  if (!headerInfo) return { parsed: false, sheetName, rowCount: 0 };
+  if (!headerInfo) {
+    const employeeSheetSummary = parseEmployeeSheetSummary({
+      sheetName,
+      textRows,
+      rawRows,
+    });
+    if (employeeSheetSummary && applyEmployeeSheetSummary({
+      aggregateMap,
+      order,
+      sourceFileName: fileName,
+      summary: employeeSheetSummary,
+    })) {
+      return { parsed: true, sheetName, rowCount: 1, source: "employeeSummary" };
+    }
+    return { parsed: false, sheetName, rowCount: 0 };
+  }
 
   const { rowIndex: headerRowIndex, columnMap } = headerInfo;
   let rowCount = 0;
