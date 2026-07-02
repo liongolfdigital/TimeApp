@@ -222,11 +222,25 @@ function getPenaltyMetric(rawRow, textRow, columnMap, employeeName) {
   return Number(calculateLatePenalty(lateMinutes, employeeName)) || 0;
 }
 
+function makeUniqueListText(values = []) {
+  return Array.from(values)
+    .map(compactText)
+    .filter(Boolean)
+    .filter((value, index, array) =>
+      array.findIndex((item) => normalizeHeader(item) === normalizeHeader(value)) === index,
+    )
+    .join(" / ");
+}
+
 function makeRecordKey({ sourceFileName, employeeCode, employeeName, fullName }) {
+  const normalizedFullName = normalizeHeader(fullName);
+  if (normalizedFullName) return ["FULL_NAME", normalizedFullName].join("||");
+
   return [
+    "SOURCE_EMPLOYEE",
     sourceFileName,
     employeeCode || "NO_CODE",
-    normalizeHeader(employeeName || fullName || "NO_NAME"),
+    normalizeHeader(employeeName || "NO_NAME"),
   ].join("||");
 }
 
@@ -236,6 +250,10 @@ function createAggregateRecord({ sourceFileName, employeeCode, employeeName, ful
     employeeName,
     fullName,
     sourceFileName,
+    employeeCodes: new Set(employeeCode ? [employeeCode] : []),
+    employeeNames: new Set(employeeName ? [employeeName] : []),
+    fullNames: new Set(fullName ? [fullName] : []),
+    sourceFileNames: new Set(sourceFileName ? [sourceFileName] : []),
     workDays: 0,
     overtime: 0,
     late: 0,
@@ -243,6 +261,18 @@ function createAggregateRecord({ sourceFileName, employeeCode, employeeName, ful
     otherDeduction: 0,
     penalty: 0,
   };
+}
+
+function mergeRecordIdentity(record, { sourceFileName, employeeCode, employeeName, fullName }) {
+  if (employeeCode) record.employeeCodes.add(employeeCode);
+  if (employeeName) record.employeeNames.add(employeeName);
+  if (fullName) record.fullNames.add(fullName);
+  if (sourceFileName) record.sourceFileNames.add(sourceFileName);
+
+  record.employeeCode = record.employeeCode || employeeCode;
+  record.employeeName = record.employeeName || employeeName;
+  record.fullName = record.fullName || fullName;
+  record.sourceFileName = record.sourceFileName || sourceFileName;
 }
 
 function addToAggregate(record, rawRow, textRow, columnMap) {
@@ -301,7 +331,9 @@ function parseSheetRows({ XLSX, sheet, sheetName, fileName, aggregateMap, order,
       }));
       order.push(key);
     }
-    addToAggregate(aggregateMap.get(key), rawRow, textRow, columnMap);
+    const record = aggregateMap.get(key);
+    mergeRecordIdentity(record, { sourceFileName, employeeCode, employeeName, fullName });
+    addToAggregate(record, rawRow, textRow, columnMap);
     rowCount += 1;
   }
 
@@ -315,8 +347,17 @@ function normalizeAggregatedRecord(record) {
   const otherDeduction = roundMinutes(record.otherDeduction);
   const penalty = roundMinutes(record.penalty);
   const balance = overtime - late - early - otherDeduction;
+  const employeeCode = makeUniqueListText(record.employeeCodes?.size ? record.employeeCodes : [record.employeeCode]);
+  const employeeName = makeUniqueListText(record.employeeNames?.size ? record.employeeNames : [record.employeeName]);
+  const fullName = makeUniqueListText(record.fullNames?.size ? record.fullNames : [record.fullName]);
+  const sourceFileName = makeUniqueListText(record.sourceFileNames?.size ? record.sourceFileNames : [record.sourceFileName]);
+
   return {
     ...record,
+    employeeCode,
+    employeeName,
+    fullName,
+    sourceFileName,
     workDays: roundOne(record.workDays),
     overtime,
     late,
