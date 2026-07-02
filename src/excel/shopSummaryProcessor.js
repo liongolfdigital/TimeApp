@@ -12,8 +12,8 @@ const SHOP_SUMMARY_HEADERS = Object.freeze([
   "Đi trễ (phút)",
   "Về sớm (phút)",
   "Trừ khác (phút)",
-  "Phút tăng/trừ",
-  "Tiền phạt đi trễ (đ)",
+  " Phút tăng/trừ ",
+  " Tiền phạt đi trễ (đ) ",
 ]);
 
 const FIELD_ALIASES = Object.freeze({
@@ -269,6 +269,10 @@ function getMetric(rawRow, textRow, columnIndex) {
   return parseNumber(rawRow?.[columnIndex], textRow?.[columnIndex]);
 }
 
+function isPenaltyCategoryColumn(columnMap) {
+  return columnMap.penaltyHeader === "phan loai di tre";
+}
+
 function shouldSkipPenaltyFromCategory(text) {
   const normalized = normalizeHeader(text);
   if (!normalized) return false;
@@ -281,35 +285,28 @@ function shouldSkipPenaltyFromCategory(text) {
 
 function shouldCalculatePenaltyFromCategory(text) {
   const normalized = normalizeHeader(text);
-  // File shop thường có cột "Phân loại đi trễ" nhưng để trống. Khi đó
-  // cột Đi trễ đã là dữ liệu cần tính phạt, nên vẫn phải tính tiền phạt.
-  if (!normalized) return true;
-  if (shouldSkipPenaltyFromCategory(text)) return false;
-  return normalized.includes("phat") || normalized.includes("di tre");
+  if (!normalized || shouldSkipPenaltyFromCategory(text)) return false;
+  return normalized.includes("phat");
 }
 
 function getPenaltyMetric(rawRow, textRow, columnMap, employeeName) {
   const explicitPenalty = getMetric(rawRow, textRow, columnMap.penalty);
   if (explicitPenalty > 0) return explicitPenalty;
 
-  const lateMinutes = getMetric(rawRow, textRow, columnMap.late);
-  if (lateMinutes <= 0) return 0;
-
   const hasPenaltyColumn = columnMap.penalty >= 0;
+  if (!hasPenaltyColumn) return 0;
+
+  // "Phân loại đi trễ" is a category/audit column, not a money column.
+  // Blank values mean the source file did not mark that day as payable penalty,
+  // so do not infer penalty only from late minutes. This keeps the Tổng shop
+  // output aligned with the manually reviewed 1006 template.
+  if (!isPenaltyCategoryColumn(columnMap)) return 0;
+
   const penaltyText = getTextCell(textRow, columnMap.penalty);
-  const isPenaltyCategoryColumn = columnMap.penaltyHeader === "phan loai di tre";
+  if (!shouldCalculatePenaltyFromCategory(penaltyText)) return 0;
 
-  if (hasPenaltyColumn && !isPenaltyCategoryColumn) {
-    // Với cột số tiền rõ ràng như "Phạt"/"Tiền phạt", nếu ô đang trống
-    // hoặc bằng 0 thì tôn trọng dữ liệu nguồn, không tự tính lại.
-    return 0;
-  }
-
-  if (isPenaltyCategoryColumn && !shouldCalculatePenaltyFromCategory(penaltyText)) {
-    return 0;
-  }
-
-  return Number(calculateLatePenalty(lateMinutes, employeeName)) || 0;
+  const lateMinutes = getMetric(rawRow, textRow, columnMap.late);
+  return lateMinutes > 0 ? Number(calculateLatePenalty(lateMinutes, employeeName)) || 0 : 0;
 }
 
 function makeUniqueListText(values = []) {
@@ -435,8 +432,10 @@ function applyEmployeeSheetSummary({ aggregateMap, order, sourceFileName, summar
   // for Phạt because the source detail sheet can have an empty "Phân loại đi trễ".
   // Do not re-add workdays/overtime/late/early/other here because the main shop
   // sheet already supplies those values.
-  if ((Number(record.penalty) || 0) <= 0 && (Number(summary.penalty) || 0) > 0) {
-    record.penalty = Number(summary.penalty) || 0;
+  if ((Number(summary.penalty) || 0) > 0) {
+    record.penaltyFromEmployeeSheets = (Number(record.penaltyFromEmployeeSheets) || 0) +
+      (Number(summary.penalty) || 0);
+    record.penalty = record.penaltyFromEmployeeSheets;
   }
   return true;
 }
@@ -642,7 +641,9 @@ function applySummaryStyles(XLSX, worksheet, rowCount) {
           bottom: { style: "thin", color: { rgb: "E5E7EB" } },
         },
       };
-      if (col >= 4) cell.z = col === 4 ? "0.0" : "#,##0";
+      if (col === 4) cell.z = "0.#";
+      else if (col === 9 || col === 10) cell.z = "#,##0;(#,##0);-";
+      else if (col >= 5) cell.z = "#,##0";
     }
   }
 }
