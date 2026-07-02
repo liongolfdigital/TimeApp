@@ -49,6 +49,34 @@ function isWorkedDay(rowResult, summaryMonthKey = "") {
     hasClockValue(rowResult.originalClockValues);
 }
 
+function normalizeWeekdayText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSaturday(rowResult = {}) {
+  const match = String(rowResult.dayKey ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    const [, year, month, day] = match;
+    return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).getUTCDay() === 6;
+  }
+  const weekday = normalizeWeekdayText(rowResult.weekdayText);
+  return weekday.includes("thu 7") || weekday.includes("saturday");
+}
+
+function getWorkedDayCredit(rowResult, summaryMonthKey = "", employeeName = "") {
+  if (!isWorkedDay(rowResult, summaryMonthKey)) return 0;
+  return isVpEmployee(employeeName) && isSaturday(rowResult) ? 0.5 : 1;
+}
+
+function sumWorkedDayCredits(workedDayCredits = new Map()) {
+  return Array.from(workedDayCredits.values()).reduce((total, credit) => total + (Number(credit) || 0), 0);
+}
+
 /** Cộng số phút/tiền theo nhân viên; Tổng đi trễ dùng toàn bộ phút trễ thực tế. */
 export function buildEmployeeSummaries(rowResults) {
   const summaries = new Map();
@@ -59,12 +87,16 @@ export function buildEmployeeSummaries(rowResults) {
     const current = summaries.get(employeeCode) ?? {
       firstRow: row, employeeCode, employeeName,
       lateMinutes: 0, earlyInMinutes: 0, penalty: 0, earlyMinutes: 0, overtimeMinutes: 0,
-      otherDeductionMinutes: 0, workDayCount: 0, workedDayKeys: new Set(),
+      otherDeductionMinutes: 0, workDayCount: 0, workedDayKeys: new Set(), workedDayCredits: new Map(),
     };
     current.firstRow = Math.min(current.firstRow, row);
-    if (isWorkedDay(rowResult, summaryMonthKey)) {
-      current.workedDayKeys.add(getWorkedDayKey(rowResult));
-      current.workDayCount = current.workedDayKeys.size;
+    const workedDayCredit = getWorkedDayCredit(rowResult, summaryMonthKey, employeeName);
+    if (workedDayCredit > 0) {
+      const workedDayKey = getWorkedDayKey(rowResult);
+      current.workedDayKeys.add(workedDayKey);
+      const previousCredit = Number(current.workedDayCredits.get(workedDayKey)) || 0;
+      current.workedDayCredits.set(workedDayKey, Math.max(previousCredit, workedDayCredit));
+      current.workDayCount = sumWorkedDayCredits(current.workedDayCredits);
     }
     // Đi trễ và Về sớm là tổng bắt buộc; Đi sớm luôn bằng 0, Tăng ca dùng giá trị qua rule Diary.
     current.lateMinutes += Number(calculation.totalLateMinutes) || 0;
@@ -80,6 +112,10 @@ export function buildEmployeeSummaries(rowResults) {
   return Array.from(summaries.values()).map((summary) => ({
     ...summary,
     workedDayKeys: Array.from(summary.workedDayKeys ?? []),
+    workedDayCredits: Array.from(summary.workedDayCredits ?? [], ([dayKey, credit]) => ({
+      dayKey,
+      credit,
+    })),
   }));
 }
 
@@ -102,7 +138,11 @@ export function writeEmployeeSummaryBox(
   ];
   values.forEach((items, rowOffset) => items.forEach((value, columnOffset) => {
     const address = XLSX.utils.encode_cell({ r: row + rowOffset, c: startColumn + columnOffset });
-    const numberFormat = items[0] === "Phạt" && columnOffset === 1 ? "#,##0" : "0";
+    const numberFormat = items[0] === "Phạt" && columnOffset === 1
+      ? "#,##0"
+      : items[0] === "Tổng công" && columnOffset === 1
+        ? "0.##"
+        : "0";
     writeCalculatedCell(targetSheet, address, value, numberFormat);
     if (columnOffset === 0) {
       targetSheet[address].s = {

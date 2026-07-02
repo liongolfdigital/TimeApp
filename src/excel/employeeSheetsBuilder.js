@@ -62,6 +62,25 @@ function formatDayKey(dayKey, fallback = "") {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : fallback;
 }
 
+function normalizeWeekdayText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSaturday(rowResult = {}) {
+  const match = String(rowResult.dayKey ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    const [, year, month, day] = match;
+    return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).getUTCDay() === 6;
+  }
+  const weekday = normalizeWeekdayText(rowResult.weekdayText);
+  return weekday.includes("thu 7") || weekday.includes("saturday");
+}
+
 function getEmployeeKey(rowResult = {}) {
   return normalizeEmployeeCode(rowResult.employeeCode) ||
     normalizeLookup(rowResult.employeeName) ||
@@ -134,9 +153,10 @@ function getWorkedDayKey(rowResult) {
   return rowResult.dayKey || String(rowResult.row ?? "");
 }
 
-function getDisplayWorkDay(rowResult, reportMonthKey = "") {
+function getDisplayWorkDay(rowResult, reportMonthKey = "", employeeName = "") {
   if (!isInReportMonth(rowResult, reportMonthKey)) return 0;
-  return isWorkedDay(rowResult) ? 1 : 0;
+  if (!isWorkedDay(rowResult)) return 0;
+  return isVpEmployee(employeeName) && isSaturday(rowResult) ? 0.5 : 1;
 }
 
 function sortEmployeeRows(rows = []) {
@@ -189,9 +209,9 @@ function writeClockCell(sheet, XLSX, row, column, value) {
   writeCalculatedCell(sheet, address, minutes / (24 * 60), "hh:mm");
 }
 
-function writeNumberCell(sheet, XLSX, row, column, value) {
+function writeNumberCell(sheet, XLSX, row, column, value, numberFormat = "0") {
   const address = XLSX.utils.encode_cell({ r: row, c: column });
-  writeCalculatedCell(sheet, address, Number(value) || 0, "0");
+  writeCalculatedCell(sheet, address, Number(value) || 0, numberFormat);
 }
 
 export function makeEmployeeAttendanceFileBaseName(employeeName) {
@@ -202,7 +222,7 @@ export function makeEmployeeAttendanceFileBaseName(employeeName) {
     .trim() || "Nhan_vien";
 }
 
-export function buildEmployeeAttendanceRowValues(rowResult, reportMonthKey = "") {
+export function buildEmployeeAttendanceRowValues(rowResult, reportMonthKey = "", employeeName = "") {
   const calculation = rowResult.calculation ?? {};
   return [
     formatDayKey(rowResult.dayKey, rowResult.dateValue),
@@ -211,7 +231,7 @@ export function buildEmployeeAttendanceRowValues(rowResult, reportMonthKey = "")
     getEffectiveClockValue(rowResult, "out1"),
     getEffectiveClockValue(rowResult, "in2"),
     getEffectiveClockValue(rowResult, "out2"),
-    getDisplayWorkDay(rowResult, reportMonthKey),
+    getDisplayWorkDay(rowResult, reportMonthKey, employeeName),
     Number(calculation.overtimeMinutes) || 0,
     Number(calculation.earlyInMinutes) || 0,
     Number(calculation.lateMinutes) || 0,
@@ -243,7 +263,7 @@ export function buildEmployeeAttendanceReports(rowResults = [], employeeSummarie
       rows: group.rows,
       summary,
       values: group.rows.map((rowResult) =>
-        buildEmployeeAttendanceRowValues(rowResult, reportMonthKey)),
+        buildEmployeeAttendanceRowValues(rowResult, reportMonthKey, group.employeeName)),
     };
   });
 }
@@ -287,9 +307,10 @@ function buildEmployeeSheetSummary(
       summary.overtimeMinutes += Number(calculation.validOvertimeMinutes) || 0;
     }
     summary.otherDeductionMinutes += Number(calculation.otherDeductionMinutes) || 0;
-    if (isWorkedDay(rowResult)) {
+    const workedDayCredit = getDisplayWorkDay(rowResult, reportMonthKey, employeeName);
+    if (workedDayCredit > 0) {
       summary.workedDayKeys.add(getWorkedDayKey(rowResult));
-      summary.workDayCount = summary.workedDayKeys.size;
+      summary.workDayCount += workedDayCredit;
     }
   });
 
@@ -297,16 +318,16 @@ function buildEmployeeSheetSummary(
 }
 
 
-function writeEmployeeSheetRows({ XLSX, sheet, rows, reportMonthKey }) {
+function writeEmployeeSheetRows({ XLSX, sheet, rows, reportMonthKey, employeeName }) {
   rows.forEach((rowResult, index) => {
     const row = index + 3;
-    const values = buildEmployeeAttendanceRowValues(rowResult, reportMonthKey);
+    const values = buildEmployeeAttendanceRowValues(rowResult, reportMonthKey, employeeName);
 
     values.forEach((value, column) => {
       if (column >= 2 && column <= 5) {
         writeClockCell(sheet, XLSX, row, column, value);
       } else if (column >= 6 && column <= 11) {
-        writeNumberCell(sheet, XLSX, row, column, value);
+        writeNumberCell(sheet, XLSX, row, column, value, column === 6 ? "0.##" : "0");
       } else {
         writeTextCell(sheet, XLSX, row, column, value, {
           alignment: { vertical: "center", wrapText: true },
@@ -346,7 +367,7 @@ function writeEmployeeSummaryRow({ XLSX, sheet, row, summary }) {
 
   summaryValues.forEach((value, column) => {
     if (column >= 6 && column <= 11) {
-      writeNumberCell(sheet, XLSX, row, column, value);
+      writeNumberCell(sheet, XLSX, row, column, value, column === 6 ? "0.##" : "0");
       const address = XLSX.utils.encode_cell({ r: row, c: column });
       applyCellStyle(sheet[address], summaryStyle);
       return;
@@ -387,7 +408,7 @@ function createEmployeeSheet(XLSX, { employeeName, monthLabel, reportMonthKey, r
     });
   });
 
-  writeEmployeeSheetRows({ XLSX, sheet, rows, reportMonthKey });
+  writeEmployeeSheetRows({ XLSX, sheet, rows, reportMonthKey, employeeName });
   const summary = buildEmployeeSheetSummary(rows, { employeeName, reportMonthKey, sourceSummary });
   const dataEndRow = Math.max(2, rows.length + 2);
   const summaryRow = dataEndRow + 1;

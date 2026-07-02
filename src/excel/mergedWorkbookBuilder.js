@@ -29,6 +29,37 @@ export const MERGED_SHEET_NAME = "Tổng hợp";
 export const MISSING_EMPLOYEE_SHEET_NAME = "Không tìm thấy";
 const MISSING_EMPLOYEE_NOTE = "Không có dữ liệu trong các file đã tải lên";
 
+function getWorkedDayCreditEntries(summary = {}) {
+  if (Array.isArray(summary.workedDayCredits) && summary.workedDayCredits.length) {
+    return summary.workedDayCredits
+      .map((entry) => {
+        if (Array.isArray(entry)) {
+          return { dayKey: entry[0], credit: Number(entry[1]) || 0 };
+        }
+        return { dayKey: entry?.dayKey, credit: Number(entry?.credit) || 0 };
+      })
+      .filter((entry) => entry.dayKey && entry.credit > 0);
+  }
+  return (summary.workedDayKeys ?? [])
+    .filter(Boolean)
+    .map((dayKey) => ({ dayKey, credit: 1 }));
+}
+
+function mergeWorkedDayCredits(target = [], sourceSummary = {}) {
+  const creditMap = new Map();
+  getWorkedDayCreditEntries({ workedDayCredits: target }).forEach(({ dayKey, credit }) => {
+    creditMap.set(dayKey, Math.max(Number(creditMap.get(dayKey)) || 0, credit));
+  });
+  getWorkedDayCreditEntries(sourceSummary).forEach(({ dayKey, credit }) => {
+    creditMap.set(dayKey, Math.max(Number(creditMap.get(dayKey)) || 0, credit));
+  });
+  return Array.from(creditMap, ([dayKey, credit]) => ({ dayKey, credit }));
+}
+
+function sumWorkedDayCredits(workedDayCredits = []) {
+  return workedDayCredits.reduce((total, entry) => total + (Number(entry?.credit) || 0), 0);
+}
+
 function getCellDisplayValue(XLSX, cell) {
   return cell ? XLSX.utils.format_cell(cell) : "";
 }
@@ -243,6 +274,7 @@ export async function mergeProcessedExcelResults(
         otherDeductionMinutes: 0,
         workDayCount: 0,
         workedDayKeys: [],
+        workedDayCredits: [],
       };
       combined.firstRow = Math.min(
         combined.firstRow,
@@ -254,12 +286,9 @@ export async function mergeProcessedExcelResults(
       combined.earlyMinutes += Number(summary.earlyMinutes) || 0;
       combined.overtimeMinutes += Number(summary.overtimeMinutes) || 0;
       combined.otherDeductionMinutes += Number(summary.otherDeductionMinutes) || 0;
-      const workedDayKeys = new Set(combined.workedDayKeys ?? []);
-      (summary.workedDayKeys ?? []).forEach((dayKey) => {
-        if (dayKey) workedDayKeys.add(dayKey);
-      });
-      combined.workedDayKeys = Array.from(workedDayKeys);
-      combined.workDayCount = workedDayKeys.size ||
+      combined.workedDayCredits = mergeWorkedDayCredits(combined.workedDayCredits, summary);
+      combined.workedDayKeys = combined.workedDayCredits.map((entry) => entry.dayKey);
+      combined.workDayCount = sumWorkedDayCredits(combined.workedDayCredits) ||
         ((Number(combined.workDayCount) || 0) + (Number(summary.workDayCount) || 0));
       combinedSummaries.set(key, combined);
     });
