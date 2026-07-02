@@ -10,7 +10,7 @@ import {
 import { ROLES } from "../constants/roleConstants";
 
 export const BRANCHES = DEFAULT_BRANCH_CODES;
-export const ADMIN_PAGES = ["process", "employees", "diary", "accounts"];
+export const ADMIN_PAGES = ["process", "shopSummary", "employees", "diary", "accounts"];
 export const MANAGER_PAGES = ["employees", "diary"];
 
 export { detectBranchFromText, normalizeBranch };

@@ -8,6 +8,7 @@ import DiaryPage from "./components/DiaryPage";
 import EmployeePage from "./components/EmployeePage";
 import LoginPage from "./components/LoginPage";
 import ProcessPage from "./components/ProcessPage";
+import ShopSummaryPage from "./components/ShopSummaryPage";
 import AppHeader from "./components/app/AppHeader";
 import { PAGE_CONFIG } from "./components/app/pageConfig";
 import { useAppData } from "./hooks/useAppData";
@@ -62,7 +63,7 @@ export default function App() {
   }
 
   const navPages = isAdmin(session.currentUser)
-    ? ["process", "employees", "diary", "accounts"]
+    ? ["process", "shopSummary", "employees", "diary", "accounts"]
     : ["employees", "diary"];
 
   return (
@@ -99,6 +100,9 @@ export default function App() {
           diaryEntries={data.diaryEntriesWithAttachments}
           shiftRules={data.shiftRules}
         />
+      )}
+      {navigation.activePage === "shopSummary" && isAdmin(session.currentUser) && (
+        <ShopSummaryPage />
       )}
       {navigation.activePage === "employees" && (
         <EmployeePage
