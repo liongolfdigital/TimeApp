@@ -216,6 +216,8 @@ function writeNumberCell(sheet, XLSX, row, column, value, numberFormat = "0") {
   writeCalculatedCell(sheet, address, Number(value) || 0, numberFormat);
 }
 
+const WORKDAY_NUMBER_FORMAT = "0.0";
+
 export function makeEmployeeAttendanceFileBaseName(employeeName) {
   return sanitizeSheetName(employeeName)
     .replace(/\.+$/g, "")
@@ -329,7 +331,7 @@ function writeEmployeeSheetRows({ XLSX, sheet, rows, reportMonthKey, employeeNam
       if (column >= 2 && column <= 5) {
         writeClockCell(sheet, XLSX, row, column, value);
       } else if (column >= 6 && column <= 11) {
-        writeNumberCell(sheet, XLSX, row, column, value, column === 6 ? "0.##" : "0");
+        writeNumberCell(sheet, XLSX, row, column, value, column === 6 ? WORKDAY_NUMBER_FORMAT : "0");
       } else {
         writeTextCell(sheet, XLSX, row, column, value, {
           alignment: { vertical: "center", wrapText: true },
@@ -369,7 +371,7 @@ function writeEmployeeSummaryRow({ XLSX, sheet, row, summary }) {
 
   summaryValues.forEach((value, column) => {
     if (column >= 6 && column <= 11) {
-      writeNumberCell(sheet, XLSX, row, column, value, column === 6 ? "0.##" : "0");
+      writeNumberCell(sheet, XLSX, row, column, value, column === 6 ? WORKDAY_NUMBER_FORMAT : "0");
       const address = XLSX.utils.encode_cell({ r: row, c: column });
       applyCellStyle(sheet[address], summaryStyle);
       return;

@@ -25,6 +25,16 @@ function normalizePdfText(value) {
   return String(value);
 }
 
+function formatWorkDayPdfValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return normalizePdfText(value);
+  return number.toFixed(1);
+}
+
+function normalizePdfCellText(value, columnIndex) {
+  return columnIndex === 6 ? formatWorkDayPdfValue(value) : normalizePdfText(value);
+}
+
 function makeUniquePdfFileName(usedNames, rawName) {
   const base = makeEmployeeAttendanceFileBaseName(rawName).slice(0, 90) || "Nhan_vien";
   let candidate = `${base}.pdf`;
@@ -58,9 +68,9 @@ function buildSummaryValues(summary = {}) {
 function buildTableBody(report) {
   return [
     EMPLOYEE_ATTENDANCE_HEADERS.map((header) => ({ text: header, style: "tableHeader" })),
-    ...report.values.map((values) => values.map((value) => normalizePdfText(value))),
-    buildSummaryValues(report.summary).map((value) => ({
-      text: normalizePdfText(value),
+    ...report.values.map((values) => values.map((value, columnIndex) => normalizePdfCellText(value, columnIndex))),
+    buildSummaryValues(report.summary).map((value, columnIndex) => ({
+      text: normalizePdfCellText(value, columnIndex),
       style: "summaryCell",
     })),
   ];

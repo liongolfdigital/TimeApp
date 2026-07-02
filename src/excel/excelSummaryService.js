@@ -143,7 +143,7 @@ export function writeEmployeeSummaryBox(
     const numberFormat = items[0] === "Phạt" && columnOffset === 1
       ? "#,##0"
       : items[0] === "Tổng công" && columnOffset === 1
-        ? "0.##"
+        ? "0.0"
         : "0";
     writeCalculatedCell(targetSheet, address, value, numberFormat);
     if (columnOffset === 0) {
