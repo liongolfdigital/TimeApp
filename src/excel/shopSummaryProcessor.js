@@ -1,4 +1,5 @@
 import { downloadExcelBlob } from "./excelWriter.js";
+import { calculateLatePenalty } from "../services/attendance/lateEarlyService.js";
 import { loadXlsxRuntime } from "./xlsxRuntime.js";
 
 const SHOP_SUMMARY_HEADERS = Object.freeze([
@@ -62,23 +63,55 @@ function getTextCell(row, index) {
   return compactText(row?.[index]);
 }
 
-function parseNumber(rawValue, textValue) {
-  if (typeof rawValue === "number" && Number.isFinite(rawValue)) return rawValue;
-  const source = compactText(textValue || rawValue);
-  if (!source) return 0;
-  let normalized = source.replace(/\s+/g, "").replace(/[^0-9,.-]/g, "");
-  if (!normalized || normalized === "-" || normalized === "," || normalized === ".") return 0;
+function shouldTreatSingleSeparatorAsThousands(parts) {
+  return parts.length > 1 && parts.slice(1).every((part) => part.length === 3);
+}
 
+function normalizeNumberText(source) {
+  const text = compactText(source);
+  if (!text) return "";
+  const hasThousandUnit = /(?:^|\d)(?:k|ng[aà]n|ngh[iì]n)\b/i.test(text);
+  const negative = /^-/.test(text);
+  let normalized = text.replace(/\s+/g, "").replace(/[^0-9,.-]/g, "");
+  if (!normalized || normalized === "-" || normalized === "," || normalized === ".") return "";
+
+  normalized = normalized.replace(/^-/, "");
   const hasComma = normalized.includes(",");
   const hasDot = normalized.includes(".");
+
   if (hasComma && hasDot) {
-    normalized = normalized.replace(/\./g, "").replace(",", ".");
-  } else if (hasComma) {
-    normalized = normalized.replace(",", ".");
+    const lastComma = normalized.lastIndexOf(",");
+    const lastDot = normalized.lastIndexOf(".");
+    const decimalSeparator = lastComma > lastDot ? "," : ".";
+    const thousandsSeparator = decimalSeparator === "," ? "." : ",";
+    const decimalDigits = normalized.length - Math.max(lastComma, lastDot) - 1;
+    if (decimalDigits === 3) {
+      normalized = normalized.replace(/[,.]/g, "");
+    } else {
+      normalized = normalized
+        .replace(new RegExp(`\\${thousandsSeparator}`, "g"), "")
+        .replace(decimalSeparator, ".");
+    }
+  } else if (hasComma || hasDot) {
+    const separator = hasComma ? "," : ".";
+    const parts = normalized.split(separator);
+    if (shouldTreatSingleSeparatorAsThousands(parts)) {
+      normalized = parts.join("");
+    } else if (separator === ",") {
+      normalized = normalized.replace(",", ".");
+    }
   }
 
   const parsed = Number.parseFloat(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+  if (!Number.isFinite(parsed)) return "";
+  const signedValue = negative ? -parsed : parsed;
+  return hasThousandUnit && Math.abs(signedValue) < 1000 ? signedValue * 1000 : signedValue;
+}
+
+function parseNumber(rawValue, textValue) {
+  if (typeof rawValue === "number" && Number.isFinite(rawValue)) return rawValue;
+  const normalized = normalizeNumberText(textValue || rawValue);
+  return normalized === "" ? 0 : normalized;
 }
 
 function roundOne(value) {
@@ -111,6 +144,7 @@ function buildColumnMap(headerRow = []) {
   const map = Object.fromEntries(
     Object.entries(FIELD_ALIASES).map(([field, aliases]) => [field, findColumn(headerRow, aliases)]),
   );
+  map.penaltyHeader = map.penalty >= 0 ? normalizeHeader(headerRow[map.penalty]) : "";
   const hasIdentity = map.employeeCode >= 0 && map.employeeName >= 0;
   const hasMetrics = [
     map.workDays,
@@ -168,6 +202,26 @@ function getMetric(rawRow, textRow, columnIndex) {
   return parseNumber(rawRow?.[columnIndex], textRow?.[columnIndex]);
 }
 
+function getPenaltyMetric(rawRow, textRow, columnMap, employeeName) {
+  const explicitPenalty = getMetric(rawRow, textRow, columnMap.penalty);
+  if (explicitPenalty > 0) return explicitPenalty;
+
+  const penaltyText = getTextCell(textRow, columnMap.penalty);
+  const hasPenaltyColumn = columnMap.penalty >= 0;
+  const isPenaltyCategoryColumn = columnMap.penaltyHeader === "phan loai di tre";
+  if (hasPenaltyColumn) {
+    if (isPenaltyCategoryColumn && /ph[aạ]t/i.test(penaltyText)) {
+      const lateMinutes = getMetric(rawRow, textRow, columnMap.late);
+      return lateMinutes > 0 ? Number(calculateLatePenalty(lateMinutes, employeeName)) || 0 : 0;
+    }
+    return 0;
+  }
+
+  const lateMinutes = getMetric(rawRow, textRow, columnMap.late);
+  if (lateMinutes <= 0) return 0;
+  return Number(calculateLatePenalty(lateMinutes, employeeName)) || 0;
+}
+
 function makeRecordKey({ sourceFileName, employeeCode, employeeName, fullName }) {
   return [
     sourceFileName,
@@ -197,7 +251,7 @@ function addToAggregate(record, rawRow, textRow, columnMap) {
   record.late += getMetric(rawRow, textRow, columnMap.late);
   record.early += getMetric(rawRow, textRow, columnMap.early);
   record.otherDeduction += getMetric(rawRow, textRow, columnMap.otherDeduction);
-  record.penalty += getMetric(rawRow, textRow, columnMap.penalty);
+  record.penalty += getPenaltyMetric(rawRow, textRow, columnMap, record.employeeName || record.fullName);
 }
 
 function parseSheetRows({ XLSX, sheet, sheetName, fileName, aggregateMap, order, monthKeys }) {
@@ -388,6 +442,20 @@ async function buildSummaryWorkbook({ XLSX, XLSX_STYLE, records, monthKey }) {
   });
 }
 
+function compareText(left, right) {
+  return String(left ?? "").localeCompare(String(right ?? ""), "vi", {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function compareShopSummaryRecords(left, right) {
+  return compareText(left.sourceFileName, right.sourceFileName) ||
+    compareText(left.employeeCode, right.employeeCode) ||
+    compareText(left.employeeName, right.employeeName) ||
+    compareText(left.fullName, right.fullName);
+}
+
 export async function createShopSummaryWorkbook(files = [], { now = new Date() } = {}) {
   const { XLSX, XLSX_STYLE } = await loadXlsxRuntime();
   const aggregateMap = new Map();
@@ -420,7 +488,8 @@ export async function createShopSummaryWorkbook(files = [], { now = new Date() }
 
   const records = order
     .map((key) => normalizeAggregatedRecord(aggregateMap.get(key)))
-    .filter((record) => record.employeeCode || record.employeeName || record.fullName);
+    .filter((record) => record.employeeCode || record.employeeName || record.fullName)
+    .sort(compareShopSummaryRecords);
   const monthKey = latestMonthKey(monthKeys, now);
   const blob = await buildSummaryWorkbook({ XLSX, XLSX_STYLE, records, monthKey });
   const fileName = makeSummaryFileName(monthKey, now);
