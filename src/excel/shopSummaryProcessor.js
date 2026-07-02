@@ -269,23 +269,46 @@ function getMetric(rawRow, textRow, columnIndex) {
   return parseNumber(rawRow?.[columnIndex], textRow?.[columnIndex]);
 }
 
+function shouldSkipPenaltyFromCategory(text) {
+  const normalized = normalizeHeader(text);
+  if (!normalized) return false;
+  return normalized.includes("khong phat") ||
+    normalized.includes("mien phat") ||
+    normalized.includes("co phep") ||
+    normalized === "phep" ||
+    normalized.includes("khong tinh phat");
+}
+
+function shouldCalculatePenaltyFromCategory(text) {
+  const normalized = normalizeHeader(text);
+  // File shop thường có cột "Phân loại đi trễ" nhưng để trống. Khi đó
+  // cột Đi trễ đã là dữ liệu cần tính phạt, nên vẫn phải tính tiền phạt.
+  if (!normalized) return true;
+  if (shouldSkipPenaltyFromCategory(text)) return false;
+  return normalized.includes("phat") || normalized.includes("di tre");
+}
+
 function getPenaltyMetric(rawRow, textRow, columnMap, employeeName) {
   const explicitPenalty = getMetric(rawRow, textRow, columnMap.penalty);
   if (explicitPenalty > 0) return explicitPenalty;
 
-  const penaltyText = getTextCell(textRow, columnMap.penalty);
+  const lateMinutes = getMetric(rawRow, textRow, columnMap.late);
+  if (lateMinutes <= 0) return 0;
+
   const hasPenaltyColumn = columnMap.penalty >= 0;
+  const penaltyText = getTextCell(textRow, columnMap.penalty);
   const isPenaltyCategoryColumn = columnMap.penaltyHeader === "phan loai di tre";
-  if (hasPenaltyColumn) {
-    if (isPenaltyCategoryColumn && /ph[aạ]t/i.test(penaltyText)) {
-      const lateMinutes = getMetric(rawRow, textRow, columnMap.late);
-      return lateMinutes > 0 ? Number(calculateLatePenalty(lateMinutes, employeeName)) || 0 : 0;
-    }
+
+  if (hasPenaltyColumn && !isPenaltyCategoryColumn) {
+    // Với cột số tiền rõ ràng như "Phạt"/"Tiền phạt", nếu ô đang trống
+    // hoặc bằng 0 thì tôn trọng dữ liệu nguồn, không tự tính lại.
     return 0;
   }
 
-  const lateMinutes = getMetric(rawRow, textRow, columnMap.late);
-  if (lateMinutes <= 0) return 0;
+  if (isPenaltyCategoryColumn && !shouldCalculatePenaltyFromCategory(penaltyText)) {
+    return 0;
+  }
+
   return Number(calculateLatePenalty(lateMinutes, employeeName)) || 0;
 }
 
