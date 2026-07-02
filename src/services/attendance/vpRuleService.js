@@ -6,7 +6,7 @@ import {
   VP_SATURDAY_RULE_ID,
   VP_SATURDAY_SHIFTS,
 } from "../../constants/attendanceConstants.js";
-import { normalizeText } from "../../employees/employeeModel.js";
+import { normalizeEmployeeCode, normalizeText } from "../../employees/employeeModel.js";
 import { isWeekday } from "../../utils/dateUtils.js";
 import { clockDistance, timeValueToMinutes } from "../../utils/timeUtils.js";
 
@@ -29,6 +29,22 @@ export function isVPEmployee(employeeName) {
 }
 
 export const isVpEmployee = isVPEmployee;
+
+const SATURDAY_HALF_DAY_EMPLOYEE_CODES = new Set(["00004"]);
+const SATURDAY_HALF_DAY_EMPLOYEE_NAMES = new Set(["OL-HUY"]);
+
+/**
+ * Nhân viên làm nửa công Thứ 7.
+ * - VP-* theo rule cũ.
+ * - Riêng mã 00004 / OL-Huy cũng tính như VP vào Thứ 7.
+ */
+export function isSaturdayHalfDayEmployee({ employeeCode, employeeName } = {}) {
+  const code = normalizeEmployeeCode(employeeCode);
+  const name = normalizeText(employeeName).toLocaleUpperCase("vi-VN");
+  return isVPEmployee(employeeName) ||
+    SATURDAY_HALF_DAY_EMPLOYEE_CODES.has(code) ||
+    SATURDAY_HALF_DAY_EMPLOYEE_NAMES.has(name);
+}
 
 /** Kiểm tra ngày chấm công có phải Thứ 7 hay không. */
 export function isSaturday(date) {
@@ -53,8 +69,8 @@ export function getVPSaturdayShift(clockValues) {
 }
 
 /** Tạo shift assignment ưu tiên cao cho nhân viên VP vào Thứ 7. */
-export function getVPSaturdayShiftAssignment({ employeeName, attendanceDate, clockValues } = {}) {
-  if (!isVPEmployee(employeeName) || !isSaturday(attendanceDate)) return null;
+export function getVPSaturdayShiftAssignment({ employeeCode, employeeName, attendanceDate, clockValues } = {}) {
+  if (!isSaturdayHalfDayEmployee({ employeeCode, employeeName }) || !isSaturday(attendanceDate)) return null;
   const shift = getVPSaturdayShift(clockValues);
   if (!shift) return null;
   return {

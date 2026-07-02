@@ -3,7 +3,7 @@
  * Sheet nhân viên chỉ dùng dữ liệu đã xử lý và ghi chú gốc từ Diary.
  */
 import { normalizeEmployeeCode, normalizeLookup, normalizeText } from "../employees/employeeModel.js";
-import { isVpEmployee } from "../services/attendance/vpRuleService.js";
+import { isSaturdayHalfDayEmployee, isVpEmployee } from "../services/attendance/vpRuleService.js";
 import { timeValueToMinutes } from "../utils/timeUtils.js";
 import { writeCalculatedCell } from "./excelWriter.js";
 
@@ -156,7 +156,9 @@ function getWorkedDayKey(rowResult) {
 function getDisplayWorkDay(rowResult, reportMonthKey = "", employeeName = "") {
   if (!isInReportMonth(rowResult, reportMonthKey)) return 0;
   if (!isWorkedDay(rowResult)) return 0;
-  return isVpEmployee(employeeName) && isSaturday(rowResult) ? 0.5 : 1;
+  return isSaturdayHalfDayEmployee({ employeeCode: rowResult.employeeCode, employeeName }) && isSaturday(rowResult)
+    ? 0.5
+    : 1;
 }
 
 function sortEmployeeRows(rows = []) {

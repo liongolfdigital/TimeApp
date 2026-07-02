@@ -288,7 +288,8 @@ export function processAttendanceSourceRow({
     shiftRules,
   );
   const vpSaturdayShiftAssignment = getVPSaturdayShiftAssignment({
-    employeeName,
+    employeeCode,
+    employeeName: effectiveEmployeeName,
     attendanceDate: dateValue,
     clockValues: originalClockValues,
   });

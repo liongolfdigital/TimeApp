@@ -7,7 +7,7 @@ import {
   MONTHLY_LATE_WARNING_TEXT,
 } from "../constants/attendanceConstants.js";
 import { OUTPUT_COLUMNS } from "../constants/excelConstants.js";
-import { isVpEmployee } from "../services/attendance/vpRuleService.js";
+import { isSaturdayHalfDayEmployee, isVpEmployee } from "../services/attendance/vpRuleService.js";
 import { writeCalculatedCell } from "./excelWriter.js";
 
 function hasClockValue(clockValues = {}) {
@@ -70,7 +70,9 @@ function isSaturday(rowResult = {}) {
 
 function getWorkedDayCredit(rowResult, summaryMonthKey = "", employeeName = "") {
   if (!isWorkedDay(rowResult, summaryMonthKey)) return 0;
-  return isVpEmployee(employeeName) && isSaturday(rowResult) ? 0.5 : 1;
+  return isSaturdayHalfDayEmployee({ employeeCode: rowResult.employeeCode, employeeName }) && isSaturday(rowResult)
+    ? 0.5
+    : 1;
 }
 
 function sumWorkedDayCredits(workedDayCredits = new Map()) {

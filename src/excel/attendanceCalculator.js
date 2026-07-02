@@ -73,6 +73,7 @@ export function calculateTimekeeping({
   }
 
   const vpSaturdayShiftAssignment = getVPSaturdayShiftAssignment({
+    employeeCode: employee?.employeeCode ?? employee?.code,
     employeeName: employeeName || employee.employeeName,
     attendanceDate,
     clockValues,
