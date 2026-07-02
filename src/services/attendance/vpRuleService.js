@@ -33,6 +33,9 @@ export const isVpEmployee = isVPEmployee;
 const SATURDAY_HALF_DAY_EMPLOYEE_CODES = new Set(["00004"]);
 const SATURDAY_HALF_DAY_EMPLOYEE_NAMES = new Set(["OL-HUY"]);
 
+const SATURDAY_FIXED_AFTERNOON_CODES = new Set(["00004"]);
+const SATURDAY_FIXED_AFTERNOON_NAMES = new Set(["OL-HUY"]);
+
 /**
  * Nhân viên làm nửa công Thứ 7.
  * - VP-* theo rule cũ.
@@ -44,6 +47,16 @@ export function isSaturdayHalfDayEmployee({ employeeCode, employeeName } = {}) {
   return isVPEmployee(employeeName) ||
     SATURDAY_HALF_DAY_EMPLOYEE_CODES.has(code) ||
     SATURDAY_HALF_DAY_EMPLOYEE_NAMES.has(name);
+}
+
+/**
+ * Nhân viên cố định ca chiều Thứ 7.
+ * Riêng mã 00004 / OL-Huy không chọn ca gần giờ bấm như VP, mà luôn dùng ca chiều.
+ */
+export function isFixedSaturdayAfternoonEmployee({ employeeCode, employeeName } = {}) {
+  const code = normalizeEmployeeCode(employeeCode);
+  const name = normalizeText(employeeName).toLocaleUpperCase("vi-VN");
+  return SATURDAY_FIXED_AFTERNOON_CODES.has(code) || SATURDAY_FIXED_AFTERNOON_NAMES.has(name);
 }
 
 /** Kiểm tra ngày chấm công có phải Thứ 7 hay không. */
@@ -68,10 +81,16 @@ export function getVPSaturdayShift(clockValues) {
   return isClockObject ? VP_SATURDAY_SHIFTS[0] : null;
 }
 
-/** Tạo shift assignment ưu tiên cao cho nhân viên VP vào Thứ 7. */
+function getSaturdayAfternoonShift() {
+  return VP_SATURDAY_SHIFTS[1] ?? VP_SATURDAY_SHIFTS[0];
+}
+
+/** Tạo shift assignment ưu tiên cao cho nhân viên nửa công vào Thứ 7. */
 export function getVPSaturdayShiftAssignment({ employeeCode, employeeName, attendanceDate, clockValues } = {}) {
   if (!isSaturdayHalfDayEmployee({ employeeCode, employeeName }) || !isSaturday(attendanceDate)) return null;
-  const shift = getVPSaturdayShift(clockValues);
+  const shift = isFixedSaturdayAfternoonEmployee({ employeeCode, employeeName })
+    ? getSaturdayAfternoonShift()
+    : getVPSaturdayShift(clockValues);
   if (!shift) return null;
   return {
     ruleId: VP_SATURDAY_RULE_ID,
